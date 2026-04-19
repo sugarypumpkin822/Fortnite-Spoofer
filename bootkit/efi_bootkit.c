@@ -134,7 +134,7 @@ BOOL BootkitMountEfiPartition(char driveLetter[4]) {
     }
     
     // Find EFI system partition (ESP) in output
-    // Format: \\?\Volume{GUID}\
+    // Format: \\?\Volume{GUID}
     char* espStart = strstr(output, "*** NO MOUNT POINTS ***");
     if (!espStart) {
         return FALSE;

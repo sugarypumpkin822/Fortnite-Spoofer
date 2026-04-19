@@ -20,6 +20,13 @@ typedef enum _VULN_DRIVER_TYPE {
     VULN_DRIVER_PROCESS_HACKER,      // sz-ks64.sys (Process Hacker driver)
     VULN_DRIVER_DELL_BIOS,          // Dell BIOS driver
     VULN_DRIVER_GLAZIO,             // GLAZIO.sys (Intel Overclocking)
+    VULN_DRIVER_MSI_AFTERBURNER,     // RTCore64.sys (MSI Afterburner)
+    VULN_DRIVER_ASUS_GPU_TWEAK,      // AsIO.sys (ASUS GPU Tweak)
+    VULN_DRIVER_EVGA_PRECISION,       // WinRing0x64.sys (EVGA Precision)
+    VULN_DRIVER_CORSAIR_ICUE,         // CorsairG4Driver.sys (Corsair iCUE)
+    VULN_DRIVER_LG_KERNEL,           // lgldriver.sys (LG Kernel Driver)
+    VULN_DRIVER_GIGABYTE_RGB2,        // giodriver.sys (Gigabyte RGB Fusion 2)
+    VULN_DRIVER_UNKNOWN = 0xFF,
     VULN_DRIVER_COUNT
 } VULN_DRIVER_TYPE;
 
@@ -101,6 +108,12 @@ VULN_DRIVER_CONFIG* GetAsrockRgbConfig(void);
 VULN_DRIVER_CONFIG* GetProcessHackerConfig(void);
 VULN_DRIVER_CONFIG* GetDellBiosConfig(void);
 VULN_DRIVER_CONFIG* GetGlazioConfig(void);
+VULN_DRIVER_CONFIG* GetMsiAfterburnerConfig(void);
+VULN_DRIVER_CONFIG* GetAsusGpuTweakConfig(void);
+VULN_DRIVER_CONFIG* GetEvgaPrecisionConfig(void);
+VULN_DRIVER_CONFIG* GetCorsairIcueConfig(void);
+VULN_DRIVER_CONFIG* GetLgDriverConfig(void);
+VULN_DRIVER_CONFIG* GetGigabyteRgb2Config(void);
 
 #ifdef __cplusplus
 }

@@ -450,3 +450,295 @@ VOID CpuidSpoof_Enable(BOOLEAN Enable) {
     g_CpuidContext.SpoofingEnabled = Enable;
     KeReleaseSpinLock(&g_CpuidContext.Lock, oldIrql);
 }
+
+// ==================== ADVANCED CPUID SPOOFING ====================
+
+/*
+ * Advanced CPU feature spoofing
+ * Modifies reported CPU features to mask virtual machine traces
+ */
+typedef struct _CPU_FEATURE_MASK {
+    // Leaf 1 ECX features
+    BOOLEAN HideVMX;           // Bit 5 - Intel VMX
+    BOOLEAN HideHypervisor;    // Bit 31 - Hypervisor present
+    
+    // Leaf 1 EDX features  
+    BOOLEAN HideMTRR;          // Bit 12 - Memory Type Range Registers
+    BOOLEAN HidePAT;           // Bit 16 - Page Attribute Table
+    
+    // Leaf 7 EBX features (Extended Features)
+    BOOLEAN HideSGX;           // Bit 2 - Software Guard Extensions
+    BOOLEAN HideHLE;           // Bit 4 - Hardware Lock Elision
+    BOOLEAN HideRTM;           // Bit 11 - Restricted Transactional Memory
+    BOOLEAN HideMPX;           // Bit 14 - Memory Protection Extensions
+    
+    // Leaf 7 ECX features
+    BOOLEAN HidePREFETCHWT1;   // Bit 0 - PREFETCHWT1
+    BOOLEAN HidePKU;           // Bit 3 - Protection Keys for Userspace
+    BOOLEAN HideCET;           // Bit 7 - Control-flow Enforcement Technology
+} CPU_FEATURE_MASK;
+
+static CPU_FEATURE_MASK g_FeatureMask = {0};
+
+/*
+ * Apply feature masking to CPUID results
+ * Call this from CPUID exit handler
+ */
+VOID CpuidSpoof_ApplyFeatureMask(PCPUID_RESULT Result) {
+    if (!g_CpuidContext.SpoofingEnabled) return;
+    
+    switch (Result->Leaf) {
+        case 1:
+            // Mask out VMX and hypervisor bits
+            if (g_FeatureMask.HideVMX) {
+                Result->Ecx &= ~(1 << 5);
+            }
+            if (g_FeatureMask.HideHypervisor) {
+                Result->Ecx &= ~(1 << 31);
+            }
+            if (g_FeatureMask.HideMTRR) {
+                Result->Edx &= ~(1 << 12);
+            }
+            if (g_FeatureMask.HidePAT) {
+                Result->Edx &= ~(1 << 16);
+            }
+            break;
+            
+        case 7:
+            // Extended features
+            if (g_FeatureMask.HideSGX) {
+                Result->Ebx &= ~(1 << 2);
+            }
+            if (g_FeatureMask.HideHLE) {
+                Result->Ebx &= ~(1 << 4);
+            }
+            if (g_FeatureMask.HideRTM) {
+                Result->Ebx &= ~(1 << 11);
+            }
+            if (g_FeatureMask.HideMPX) {
+                Result->Ebx &= ~(1 << 14);
+            }
+            if (g_FeatureMask.HidePKU) {
+                Result->Ecx &= ~(1 << 3);
+            }
+            if (g_FeatureMask.HideCET) {
+                Result->Ecx &= ~(1 << 7);
+            }
+            break;
+    }
+}
+
+/*
+ * Set feature mask for anti-detection
+ */
+VOID CpuidSpoof_SetFeatureMask(PCPU_FEATURE_MASK Mask) {
+    if (!Mask) return;
+    
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&g_CpuidContext.Lock, &oldIrql);
+    RtlCopyMemory(&g_FeatureMask, Mask, sizeof(CPU_FEATURE_MASK));
+    KeReleaseSpinLock(&g_CpuidContext.Lock, oldIrql);
+}
+
+/*
+ * Generate consistent but fake processor serial number
+ * Used for PSN (Processor Serial Number) leaf
+ */
+VOID CpuidSpoof_GenerateFakePSN(UINT32* PsnHigh, UINT32* PsnLow) {
+    // Generate deterministic but different serial
+    UINT32 seed = (UINT32)__rdtsc();
+    *PsnHigh = RtlRandomEx(&seed);
+    *PsnLow = RtlRandomEx(&seed);
+}
+
+/*
+ * Spoof brand string with fake processor name
+ */
+VOID CpuidSpoof_SetFakeBrandString(const CHAR* BrandString) {
+    if (!BrandString) return;
+    
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&g_CpuidContext.Lock, &oldIrql);
+    
+    // Parse brand string into 3 leaves (80000002h-80000004h)
+    // Each leaf returns 16 bytes in EAX:EBX:ECX:EDX
+    size_t len = strlen(BrandString);
+    
+    for (int i = 0; i < 3 && i * 16 < len; i++) {
+        UINT32* dest = (UINT32*)g_CpuidContext.FakeBrand[i * 4];
+        const CHAR* src = BrandString + (i * 16);
+        
+        for (int j = 0; j < 4 && (i * 16 + j * 4) < len; j++) {
+            dest[j] = (src[j*4]) | (src[j*4+1] << 8) | 
+                      (src[j*4+2] << 16) | (src[j*4+3] << 24);
+        }
+    }
+    
+    KeReleaseSpinLock(&g_CpuidContext.Lock, oldIrql);
+}
+
+/*
+ * Spoof cache and TLB info
+ * Leaf 2 (descriptors) and leaf 4 (deterministic cache)
+ */
+VOID CpuidSpoof_ModifyCacheInfo(PCPUID_RESULT Result) {
+    if (!g_CpuidContext.SpoofingEnabled) return;
+    
+    switch (Result->Leaf) {
+        case 2: // Cache descriptors
+            // Report different cache configuration
+            // 0x4A = 0x01 for data TLB, 0x02 for instruction TLB
+            Result->Eax = 0x01;
+            Result->Ebx = 0x02;
+            Result->Ecx = 0x03;
+            Result->Edx = 0x00;
+            break;
+            
+        case 4: // Deterministic cache parameters
+            // Modify cache size and associativity
+            if (Result->SubLeaf == 0) { // L1 Data
+                Result->Eax = (1 << 5) | (7 << 14); // 32 sets, 8-way
+                Result->Ebx = (63 << 0) | (7 << 22); // 64 line size, 8 partitions
+                Result->Ecx = 32; // 32KB
+            } else if (Result->SubLeaf == 1) { // L1 Instruction
+                Result->Eax = (1 << 5) | (7 << 14);
+                Result->Ebx = (63 << 0) | (7 << 22);
+                Result->Ecx = 32;
+            } else if (Result->SubLeaf == 2) { // L2
+                Result->Eax = (1 << 5) | (15 << 14);
+                Result->Ebx = (63 << 0) | (3 << 22);
+                Result->Ecx = 256; // 256KB
+            }
+            break;
+    }
+}
+
+/*
+ * Spoof APIC (Advanced Programmable Interrupt Controller) ID
+ * Leaf 1 EBX bits 31-24
+ */
+VOID CpuidSpoof_SetFakeApicId(UINT8 ApicId) {
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&g_CpuidContext.Lock, &oldIrql);
+    
+    // Modify leaf 1 EBX to report different APIC ID
+    UINT32 ebx = g_CpuidContext.FakeValues[1].Ebx;
+    ebx = (ebx & 0x00FFFFFF) | (ApicId << 24);
+    g_CpuidContext.FakeValues[1].Ebx = ebx;
+    
+    KeReleaseSpinLock(&g_CpuidContext.Lock, oldIrql);
+}
+
+/*
+ * Spoof performance monitoring info
+ * Leaf 0Ah
+ */
+VOID CpuidSpoof_ModifyPerfMonInfo(PCPUID_RESULT Result) {
+    if (!g_CpuidContext.SpoofingEnabled) return;
+    if (Result->Leaf != 0x0A) return;
+    
+    // Report different performance monitoring capabilities
+    Result->Eax = 0x00040004; // 4 counters, 4 fixed counters
+    Result->Ebx = 0x00000007; // Counter bit width
+    Result->Ecx = 0x00000000; // Reserved
+    Result->Edx = 0x0000030F; // Fixed counter bit width, events
+}
+
+/*
+ * Spoof extended topology info
+ * Leaf 0Bh/1Fh
+ */
+VOID CpuidSpoof_ModifyTopologyInfo(PCPUID_RESULT Result) {
+    if (!g_CpuidContext.SpoofingEnabled) return;
+    if (Result->Leaf != 0x0B && Result->Leaf != 0x1F) return;
+    
+    // Report different topology (single socket, fewer cores)
+    Result->Ecx = Result->SubLeaf; // Level type
+    Result->Edx = Result->SubLeaf; // x2APIC ID
+    
+    switch (Result->SubLeaf) {
+        case 0: // SMT level
+            Result->Eax = 0; // Number of bits shift
+            Result->Ebx = 1; // Number of logical processors
+            break;
+        case 1: // Core level
+            Result->Eax = 1;
+            Result->Ebx = 4; // Report 4 cores
+            break;
+    }
+}
+
+/*
+ * Detect and spoof based on CPU vendor
+ * AMD vs Intel have different CPUID layouts
+ */
+typedef enum _CPU_VENDOR {
+    CPU_VENDOR_INTEL,
+    CPU_VENDOR_AMD,
+    CPU_VENDOR_UNKNOWN
+} CPU_VENDOR;
+
+CPU_VENDOR CpuidSpoof_DetectVendor(VOID) {
+    CPUID_RESULT result;
+    __cpuid((int*)&result, 0);
+    
+    // Check EBX-EDX-ECX signature
+    if (result.Ebx == 'uneG' && result.Edx == 'ineI' && result.Ecx == 'letn') {
+        return CPU_VENDOR_INTEL;
+    }
+    if (result.Ebx == 'htuA' && result.Edx == 'itne' && result.Ecx == 'DMAc') {
+        return CPU_VENDOR_AMD;
+    }
+    
+    return CPU_VENDOR_UNKNOWN;
+}
+
+/*
+ * AMD-specific spoofing
+ * Different leaves and feature bits
+ */
+VOID CpuidSpoof_ApplyAmdSpoofing(PCPUID_RESULT Result) {
+    if (CpuidSpoof_DetectVendor() != CPU_VENDOR_AMD) return;
+    
+    switch (Result->Leaf) {
+        case 0x80000001: // Extended processor info
+            // Mask out SVM (Secure Virtual Machine) bit if hiding hypervisor
+            if (g_FeatureMask.HideHypervisor) {
+                Result->Ecx &= ~(1 << 2); // SVM bit
+            }
+            break;
+            
+        case 0x80000008: // Virtual/Physical address size
+            // Modify reported address sizes
+            Result->Eax = (48 << 0) | (48 << 8); // 48-bit virtual/physical
+            break;
+            
+        case 0x8000001E: // Node, core, thread identifiers
+            // Spoof node topology
+            Result->Eax = 0; // Node ID
+            Result->Ebx = (1 << 8) | 4; // 4 cores per node
+            break;
+    }
+}
+
+/*
+ * Initialize advanced CPUID spoofing
+ */
+NTSTATUS CpuidSpoof_InitializeAdvanced(VOID) {
+    NTSTATUS status = CpuidSpoof_Initialize();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    // Set default feature mask (hide VM indicators)
+    CPU_FEATURE_MASK mask = {0};
+    mask.HideVMX = TRUE;
+    mask.HideHypervisor = TRUE;
+    CpuidSpoof_SetFeatureMask(&mask);
+    
+    // Set plausible brand string
+    const CHAR* fakeBrand = "Intel(R) Core(TM) i9-9900K CPU @ 3.60GHz";
+    CpuidSpoof_SetFakeBrandString(fakeBrand);
+    
+    return STATUS_SUCCESS;
+}

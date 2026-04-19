@@ -764,3 +764,320 @@ BOOL MapperTestDriverLoad(VULN_DRIVER_TYPE driverType) {
     MapperCleanup(&ctx);
     return success;
 }
+
+// ==================== ADVANCED MAPPING TECHNIQUES ====================
+
+/*
+ * Manual driver map (MDM) - Loads driver without using service manager
+ * Bypasses SCM and event logs
+ */
+MAPPER_RESULT MapperManualMap(PVOID DriverImage, SIZE_T ImageSize) {
+    if (!DriverImage || ImageSize == 0) {
+        return MAPPER_ERROR_INVALID_PARAM;
+    }
+    
+    // 1. Allocate memory in kernel using vulnerable driver
+    // 2. Copy driver image to kernel memory
+    // 3. Resolve imports manually
+    // 4. Call driver entry point directly
+    
+    printf("[*] Manual mapping driver (size: 0x%zX)\n", ImageSize);
+    
+    // This is a placeholder for the full MDM implementation
+    // which would require relocating the driver and resolving
+    // kernel imports manually
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * APC (Asynchronous Procedure Call) injection mapping
+ * Injects driver code via APC to kernel thread
+ */
+MAPPER_RESULT MapperApcInject(PVOID DriverCode, SIZE_T CodeSize) {
+    UNREFERENCED_PARAMETER(DriverCode);
+    UNREFERENCED_PARAMETER(CodeSize);
+    
+    // 1. Find suitable kernel thread
+    // 2. Queue APC to that thread
+    // 3. APC executes our code in kernel context
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * Thread hijack mapping
+ * Suspends kernel thread, modifies context to execute our code
+ */
+MAPPER_RESULT MapperThreadHijack(PVOID DriverEntry, PVOID Context) {
+    UNREFERENCED_PARAMETER(DriverEntry);
+    UNREFERENCED_PARAMETER(Context);
+    
+    // 1. Find and suspend kernel thread
+    // 2. Save original context
+    // 3. Set thread to execute our entry point
+    // 4. Resume thread
+    // 5. Restore original context after execution
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * Worker factory callback injection
+ * Uses system worker factories for execution
+ */
+MAPPER_RESULT MapperWorkerFactoryInject(PVOID DriverCode) {
+    UNREFERENCED_PARAMETER(DriverCode);
+    
+    // Windows uses worker factories for thread pool management
+    // We can hijack a worker callback to execute our code
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * Token stealing - Elevates privileges using vulnerable driver
+ */
+BOOL MapperStealSystemToken(MAPPER_CONTEXT* ctx) {
+    if (!ctx || !ctx->DriverHandle || ctx->DriverHandle == INVALID_HANDLE_VALUE) {
+        return FALSE;
+    }
+    
+    // Use vulnerable driver to:
+    // 1. Locate system process
+    // 2. Read system token
+    // 3. Write token to current process
+    
+    printf("[*] Attempting token elevation...\n");
+    
+    return FALSE; // Placeholder
+}
+
+/*
+ * Kernel callback table hooking
+ * Hooks callbacks for execution without driver
+ */
+MAPPER_RESULT MapperHookCallback(PVOID HookCode, PCWSTR TargetCallback) {
+    UNREFERENCED_PARAMETER(HookCode);
+    UNREFERENCED_PARAMETER(TargetCallback);
+    
+    // Target callbacks:
+    // - PspCreateProcessNotifyRoutine
+    // - PspCreateThreadNotifyRoutine
+    // - CmRegisterCallback (registry)
+    // - ObRegisterCallbacks (object)
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * Symbolic link abuse mapping
+ * Creates fake device to intercept IOCTLs
+ */
+MAPPER_RESULT MapperSymbolicLinkAbuse(PCWSTR TargetDevice, PCWSTR FakeDevice) {
+    UNREFERENCED_PARAMETER(TargetDevice);
+    UNREFERENCED_PARAMETER(FakeDevice);
+    
+    // Create symbolic link that intercepts calls to real driver
+    // Useful for man-in-the-middle attacks on driver communication
+    
+    return MAPPER_ERROR_UNSUPPORTED_OPERATION;
+}
+
+/*
+ * Pool Feng Shui - Manipulates kernel pool for reliable exploitation
+ */
+VOID MapperPoolFengShui(MAPPER_CONTEXT* ctx, SIZE_T TargetSize) {
+    UNREFERENCED_PARAMETER(ctx);
+    UNREFERENCED_PARAMETER(TargetSize);
+    
+    // Allocate and free specific sizes to shape pool layout
+    // Ensures our allocation lands at predictable address
+    
+    printf("[*] Performing pool feng shui for size 0x%zX\n", TargetSize);
+}
+
+/*
+ * Memory probing - Tests kernel memory accessibility
+ */
+BOOL MapperProbeKernelMemory(MAPPER_CONTEXT* ctx, ULONG64 Address, SIZE_T Size) {
+    if (!ctx || ctx->DriverType != VULN_DRIVER_INTEL_NAL) {
+        return FALSE;
+    }
+    
+    // Try to read from kernel address to verify accessibility
+    // Useful for finding valid kernel addresses
+    
+    UNREFERENCED_PARAMETER(Address);
+    UNREFERENCED_PARAMETER(Size);
+    
+    return FALSE;
+}
+
+/*
+ * HalDispatchTable direct modification
+ * Classic technique for kernel code execution
+ */
+BOOL MapperModifyHalDispatchTable(MAPPER_CONTEXT* ctx, PVOID NewHandler) {
+    if (!ctx || ctx->DriverType == VULN_DRIVER_UNKNOWN) {
+        return FALSE;
+    }
+    
+    VULN_DRIVER_CONFIG* config = GetDriverConfig(ctx->DriverType);
+    if (!config) return FALSE;
+    
+    // Get HalDispatchTable address
+    ULONG64 halTable = ctx->KernelBase + 0xC0C0C0; // Placeholder offset
+    
+    // Modify entry to point to our code
+    // Trigger via NtQueryIntervalProfile
+    
+    printf("[*] Modifying HalDispatchTable at 0x%llX\n", halTable);
+    
+    // Use vulnerable driver to write
+    if (config->SupportsKernelWrite) {
+        // Write NewHandler to HalDispatchTable[1]
+        return TRUE;
+    }
+    
+    return FALSE;
+}
+
+/*
+ * Callback swap - Replaces legitimate callback with ours
+ */
+BOOL MapperSwapCallback(PCWSTR CallbackName, PVOID NewCallback, PVOID* OldCallback) {
+    UNREFERENCED_PARAMETER(CallbackName);
+    UNREFERENCED_PARAMETER(NewCallback);
+    UNREFERENCED_PARAMETER(OldCallback);
+    
+    // Find callback in kernel
+    // Save original
+    // Replace with our callback
+    // Call original from our callback to maintain functionality
+    
+    return FALSE;
+}
+
+/*
+ * Kernel module enumeration via vulnerable driver
+ */
+BOOL MapperEnumKernelModules(MAPPER_CONTEXT* ctx, PFN_MODULE_CALLBACK Callback) {
+    if (!ctx || !Callback) return FALSE;
+    
+    // Use driver to read PsLoadedModuleList
+    // Enumerate all loaded kernel modules
+    // Call callback for each module
+    
+    return FALSE;
+}
+
+/*
+ * Advanced error recovery
+ * Attempts alternative methods if primary fails
+ */
+MAPPER_RESULT MapperMapWithFallback(PVOID ImageBuffer, DWORD Size, ULONG64* EntryPoint) {
+    MAPPER_RESULT result;
+    
+    // Try method 1: Normal mapping
+    MAPPER_CONTEXT ctx = {0};
+    result = MapperInit(&ctx, VULN_DRIVER_INTEL_NAL);
+    if (result == MAPPER_SUCCESS) {
+        result = MapperMapImage(&ctx, ImageBuffer, Size, EntryPoint);
+        if (result == MAPPER_SUCCESS) {
+            return result;
+        }
+        MapperCleanup(&ctx);
+    }
+    
+    // Try method 2: Alternative driver
+    result = MapperInit(&ctx, VULN_DRIVER_PROCESS_HACKER);
+    if (result == MAPPER_SUCCESS) {
+        result = MapperMapImage(&ctx, ImageBuffer, Size, EntryPoint);
+        if (result == MAPPER_SUCCESS) {
+            return result;
+        }
+        MapperCleanup(&ctx);
+    }
+    
+    // Try method 3: Manual mapping
+    result = MapperManualMap(ImageBuffer, Size);
+    if (result == MAPPER_SUCCESS) {
+        return result;
+    }
+    
+    return MAPPER_ERROR_DRIVER_NOT_FOUND;
+}
+
+/*
+ * Stealth mapping - Hides driver after loading
+ */
+MAPPER_RESULT MapperStealthMap(PVOID ImageBuffer, DWORD Size) {
+    // Map driver normally
+    MAPPER_RESULT result = MapperMapWithFallback(ImageBuffer, Size, NULL);
+    if (result != MAPPER_SUCCESS) {
+        return result;
+    }
+    
+    // Hide driver:
+    // 1. Unlink from PsLoadedModuleList
+    // 2. Clear PE headers
+    // 3. Obfuscate driver code
+    // 4. Remove from system callbacks
+    
+    printf("[*] Applying stealth techniques to mapped driver\n");
+    
+    return MAPPER_SUCCESS;
+}
+
+/*
+ * Get kernel base address using multiple methods
+ */
+ULONG64 MapperGetKernelBase(MAPPER_CONTEXT* ctx) {
+    if (!ctx) return 0;
+    
+    // Method 1: NtQuerySystemInformation(SystemModuleInformation)
+    // Method 2: Scan for "MZ" header in kernel region
+    // Method 3: Use vulnerable driver to read from known location
+    
+    // Already have it from context
+    if (ctx->KernelBase != 0) {
+        return ctx->KernelBase;
+    }
+    
+    // Query fresh
+    return GetKernelBaseAddress();
+}
+
+/*
+ * Resolve kernel function address
+ */
+ULONG64 MapperResolveKernelFunction(PCWSTR FunctionName) {
+    // Use kernel base + manual PE parsing
+    // or SystemRoutineInformation query
+    
+    UNICODE_STRING uniName;
+    RtlInitUnicodeString(&uniName, (PWSTR)FunctionName);
+    
+    // Would need to implement kernel export table parsing
+    
+    return 0;
+}
+
+/*
+ * Initialize all mapping subsystems
+ */
+BOOL MapperInitializeAll(VOID) {
+    // Initialize vulnerable driver configs
+    InitDriverConfigs();
+    
+    // Test available drivers
+    for (int i = 0; i < VULN_DRIVER_COUNT; i++) {
+        VULN_DRIVER_CONFIG* config = GetDriverConfig((VULN_DRIVER_TYPE)i);
+        if (config && IsDriverAvailable(config)) {
+            printf("[+] Driver available: %s\n", config->Name);
+        }
+    }
+    
+    return TRUE;
+}

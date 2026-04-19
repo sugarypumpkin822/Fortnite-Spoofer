@@ -12,18 +12,16 @@
 
 #ifndef _EFI_BOOTKIT_APP_C
 #define _EFI_BOOTKIT_APP_C
-
-// EDK2 headers would be included here in actual build:
-// #include <Uefi.h>
-// #include <Protocol/LoadedImage.h>
-// #include <Protocol/SimpleFileSystem.h>
-// #include <Library/UefiLib.h>
-// #include <Library/UefiBootServicesTableLib.h>
-// #include <Library/UefiRuntimeServicesTableLib.h>
-// #include <Library/MemoryAllocationLib.h>
-// #include <Library/BaseMemoryLib.h>
-// #include <Library/PrintLib.h>
-// #include <Library/DebugLib.h>
+#include <Uefi.h>
+#include <Protocol/LoadedImage.h>
+#include <Protocol/SimpleFileSystem.h>
+#include <Library/UefiLib.h>
+#include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiRuntimeServicesTableLib.h>
+#include <Library/MemoryAllocationLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Library/PrintLib.h>
+#include <Library/DebugLib.h>
 
 // Standalone definitions for reference (these come from EDK2)
 typedef unsigned long long  UINT64;

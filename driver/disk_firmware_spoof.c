@@ -520,3 +520,421 @@ VOID DiskSpoof_Enable(BOOLEAN Enable) {
     g_DiskSpoofContext.Enabled = Enable;
     KeReleaseSpinLock(&g_DiskSpoofContext.Lock, oldIrql);
 }
+
+// ==================== ADVANCED FEATURES ====================
+
+/*
+ * SMART data spoofing
+ * Modifies SMART attribute data to hide real drive usage patterns
+ */
+typedef struct _SMART_ATTRIBUTE {
+    UINT8   Id;
+    UINT16  Flags;
+    UINT8   Current;
+    UINT8   Worst;
+    UINT8   Raw[6];
+    UINT8   Reserved;
+} SMART_ATTRIBUTE;
+
+typedef struct _SMART_DATA {
+    UINT16      Version;
+    SMART_ATTRIBUTE Attributes[30];
+    UINT8       Reserved[6];
+    UINT16      OfflineDataCollectionStatus;
+    UINT8       SelfTestStatus;
+    UINT16      TotalTimeForOfflineDataCollection;
+    UINT8       VendorSpecific1;
+    UINT8       OfflineDataCollectionCapability;
+    UINT16      SmartCapability;
+    UINT8       ErrorLogCapability;
+    UINT8       VendorSpecific2;
+    UINT8       ShortSelfTestRoutineTime;
+    UINT8       ExtendedSelfTestRoutineTime;
+    UINT8       Reserved2[2];
+    UINT8       VendorSpecific3[125];
+    UINT8       Checksum;
+} SMART_DATA;
+
+VOID DiskSpoof_ModifySmartData(PSMART_DATA SmartData) {
+    if (!g_DiskSpoofContext.Initialized || !g_DiskSpoofContext.Enabled) {
+        return;
+    }
+    
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&g_DiskSpoofContext.Lock, &oldIrql);
+    
+    // Modify power-on hours to appear as a new drive
+    for (int i = 0; i < 30; i++) {
+        if (SmartData->Attributes[i].Id == 9) {  // Power-On Hours
+            // Set to a low random value (appears as new drive)
+            SmartData->Attributes[i].Raw[0] = (UINT8)(RtlRandomEx(NULL) % 24);
+            SmartData->Attributes[i].Raw[1] = 0;
+            SmartData->Attributes[i].Raw[2] = 0;
+            SmartData->Attributes[i].Raw[3] = 0;
+            SmartData->Attributes[i].Raw[4] = 0;
+            SmartData->Attributes[i].Raw[5] = 0;
+            SmartData->Attributes[i].Current = 100;
+            SmartData->Attributes[i].Worst = 100;
+        }
+        
+        if (SmartData->Attributes[i].Id == 12) {  // Power Cycle Count
+            // Set to low random value
+            SmartData->Attributes[i].Raw[0] = (UINT8)(RtlRandomEx(NULL) % 50);
+            SmartData->Attributes[i].Raw[1] = 0;
+            SmartData->Attributes[i].Raw[2] = 0;
+            SmartData->Attributes[i].Raw[3] = 0;
+            SmartData->Attributes[i].Raw[4] = 0;
+            SmartData->Attributes[i].Raw[5] = 0;
+            SmartData->Attributes[i].Current = 100;
+            SmartData->Attributes[i].Worst = 100;
+        }
+        
+        if (SmartData->Attributes[i].Id == 197) {  // Current Pending Sector Count
+            // Clear any pending sectors (appears healthy)
+            RtlZeroMemory(SmartData->Attributes[i].Raw, 6);
+            SmartData->Attributes[i].Current = 100;
+            SmartData->Attributes[i].Worst = 100;
+        }
+        
+        if (SmartData->Attributes[i].Id == 198) {  // Offline Uncorrectable
+            // Clear offline uncorrectable errors
+            RtlZeroMemory(SmartData->Attributes[i].Raw, 6);
+            SmartData->Attributes[i].Current = 100;
+            SmartData->Attributes[i].Worst = 100;
+        }
+    }
+    
+    KeReleaseSpinLock(&g_DiskSpoofContext.Lock, oldIrql);
+}
+
+/*
+ * World Wide Name (WWN) spoofing for SAN/NAS environments
+ */
+typedef struct _WWN_SPOOF_CONTEXT {
+    UINT64  OriginalWWN;
+    UINT64  FakeWWN;
+    BOOLEAN HaveOriginal;
+} WWN_SPOOF_CONTEXT;
+
+static WWN_SPOOF_CONTEXT g_WwnContext = {0};
+
+VOID DiskSpoof_GenerateFakeWWN(VOID) {
+    // Generate OUI (Organizationally Unique Identifier) - use random common vendor
+    UINT32 oui = 0x0014C2;  // Random vendor OUI
+    
+    // Generate random extension
+    UINT32 ext = (UINT32)RtlRandomEx(NULL);
+    
+    g_WwnContext.FakeWWN = ((UINT64)oui << 36) | ((UINT64)ext & 0x000000FFFFFFFFFFULL);
+}
+
+VOID DiskSpoof_ModifyInquiryVpdPage(PUCHAR Buffer, ULONG Length, UINT8 PageCode) {
+    if (!g_DiskSpoofContext.Initialized || !g_DiskSpoofContext.Enabled) {
+        return;
+    }
+    
+    // Page 0x83 - Device Identification VPD page
+    if (PageCode == 0x83 && Length >= 4) {
+        UINT16 pageLength = (Buffer[2] << 8) | Buffer[3];
+        if (pageLength + 4 > Length) pageLength = (UINT16)(Length - 4);
+        
+        PUCHAR ptr = Buffer + 4;
+        UINT16 offset = 0;
+        
+        while (offset < pageLength) {
+            UINT8 protoCode = (ptr[0] >> 4) & 0xF;
+            UINT8 codeSet = ptr[0] & 0xF;
+            UINT8 piv = (ptr[1] >> 7) & 1;
+            UINT8 assoc = (ptr[1] >> 4) & 0x3;
+            UINT8 desigType = ptr[1] & 0xF;
+            UINT8 desigLen = ptr[3];
+            
+            // Type 1 = Binary (EUI-64 based 8-byte WWN)
+            // Type 2 = ASCII (8-byte WWN)
+            if (desigType == 1 && desigLen >= 8 && codeSet == 1) {
+                // Save original if not saved
+                if (!g_WwnContext.HaveOriginal) {
+                    g_WwnContext.OriginalWWN = 0;
+                    for (int i = 0; i < 8 && i < desigLen; i++) {
+                        g_WwnContext.OriginalWWN |= ((UINT64)ptr[4 + i] << (56 - i * 8));
+                    }
+                    g_WwnContext.HaveOriginal = TRUE;
+                }
+                
+                // Write fake WWN
+                for (int i = 0; i < 8 && i < desigLen; i++) {
+                    ptr[4 + i] = (UINT8)((g_WwnContext.FakeWWN >> (56 - i * 8)) & 0xFF);
+                }
+            }
+            
+            offset += (UINT16)(4 + desigLen);
+            ptr += (4 + desigLen);
+        }
+    }
+}
+
+/*
+ * Additional SCSI/ATA spoofing for comprehensive coverage
+ */
+VOID DiskSpoof_ModifyModeSensePage(PUCHAR Buffer, ULONG Length, UINT8 PageCode) {
+    if (!g_DiskSpoofContext.Initialized || !g_DiskSpoofContext.Enabled) {
+        return;
+    }
+    
+    switch (PageCode) {
+        case 0x01:  // Read-Write Error Recovery page
+            // Modify error recovery settings
+            if (Length >= 12) {
+                // Set error recovery parameters to appear as new/healthy drive
+                Buffer[3] = 0x80;  // Automatic read reassignment enabled
+                Buffer[4] = 0;     // Read retry count
+                Buffer[8] = 0x80;  // Automatic write reassignment enabled
+                Buffer[9] = 0;     // Write retry count
+            }
+            break;
+            
+        case 0x1C:  // Informational Exceptions Control page
+            // Disable SMART warnings in mode sense
+            if (Length >= 12) {
+                Buffer[2] = 0x00;  // Method of reporting: No reporting
+                Buffer[3] = 0x00;  // No exceptions
+            }
+            break;
+    }
+}
+
+/*
+ * Initialize advanced spoofing features
+ */
+NTSTATUS DiskSpoof_InitializeAdvanced(VOID) {
+    NTSTATUS status = DiskSpoof_Initialize();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    // Initialize WWN spoofing
+    DiskSpoof_GenerateFakeWWN();
+    
+    return STATUS_SUCCESS;
+}
+
+// ==================== ADVANCED DISK SPOOFING FEATURES ====================
+
+/*
+ * Spoof USB/Removable disk identifiers
+ * Handles USB mass storage devices
+ */
+typedef struct _USB_SPOOF_CONTEXT {
+    BOOLEAN     Initialized;
+    CHAR        FakeVendorId[9];
+    CHAR        FakeProductId[17];
+    CHAR        FakeRevision[5];
+    UINT8       FakeSerial[32];
+} USB_SPOOF_CONTEXT;
+
+static USB_SPOOF_CONTEXT g_UsbSpoofContext = {0};
+
+VOID UsbSpoof_GenerateFakeIds(VOID) {
+    // Common USB vendor IDs to spoof as
+    const CHAR* vendors[] = {"Kingston", "SanDisk", "Samsung", "Crucial", "WD"};
+    const CHAR* products[] = {"DataTraveler", "Ultra", "SSD", "MyPassport", "Portable"};
+    
+    strncpy(g_UsbSpoofContext.FakeVendorId, 
+            vendors[RtlRandomEx(NULL) % 5], 8);
+    strncpy(g_UsbSpoofContext.FakeProductId, 
+            products[RtlRandomEx(NULL) % 5], 16);
+    
+    // Generate random revision
+    g_UsbSpoofContext.FakeRevision[0] = '0' + (RtlRandomEx(NULL) % 10);
+    g_UsbSpoofContext.FakeRevision[1] = '.';
+    g_UsbSpoofContext.FakeRevision[2] = '0' + (RtlRandomEx(NULL) % 10);
+    g_UsbSpoofContext.FakeRevision[3] = '0' + (RtlRandomEx(NULL) % 10);
+    g_UsbSpoofContext.FakeRevision[4] = '\0';
+    
+    // Generate random serial
+    for (int i = 0; i < 20; i++) {
+        g_UsbSpoofContext.FakeSerial[i] = 'A' + (RtlRandomEx(NULL) % 26);
+    }
+    
+    g_UsbSpoofContext.Initialized = TRUE;
+}
+
+/*
+ * Spoof RAID controller disk info
+ * Handles Intel RST, AMD RAID, etc.
+ */
+typedef struct _RAID_SPOOF_CONTEXT {
+    BOOLEAN     Initialized;
+    UINT16      FakeRaidSerial;
+    CHAR        FakeRaidName[32];
+    UINT32      FakeArrayId;
+} RAID_SPOOF_CONTEXT;
+
+static RAID_SPOOF_CONTEXT g_RaidSpoofContext = {0};
+
+VOID RaidSpoof_GenerateFakeIds(VOID) {
+    g_RaidSpoofContext.FakeRaidSerial = (UINT16)(RtlRandomEx(NULL) & 0xFFFF);
+    g_RaidSpoofContext.FakeArrayId = RtlRandomEx(NULL);
+    
+    // Random RAID array name
+    const CHAR* raidNames[] = {"Array0", "Volume0", "RAID0", "Storage1"};
+    strncpy(g_RaidSpoofContext.FakeRaidName, 
+            raidNames[RtlRandomEx(NULL) % 4], 31);
+    
+    g_RaidSpoofContext.Initialized = TRUE;
+}
+
+/*
+ * Spoof NVMe extended features
+ * Controller ID, Namespace ID, etc.
+ */
+VOID NvmeSpoof_ExtendedFeatures(PNVME_IDENTIFY_CONTROLLER NvmeId) {
+    if (!NvmeId) return;
+    
+    // Spoof vendor specific data
+    for (int i = 0; i < 1024; i++) {
+        NvmeId->VendorSpecific[i] = (UINT8)RtlRandomEx(NULL);
+    }
+    
+    // Modify power state descriptors to appear as different model
+    for (int i = 0; i < 32; i++) {
+        // Randomize power consumption values
+        NvmeId->Psd[i].MaxPower = 50 + (RtlRandomEx(NULL) % 200);
+    }
+    
+    // Spoof optional admin command support
+    NvmeId->Oacs = 0x1F;  // All standard admin commands
+    
+    // Spoof firmware update granularity
+    NvmeId->Fwug = 0x04;
+    
+    // Spoof keep alive support
+    NvmeId->Kas = 12000;  // 120 seconds in 100ms units
+}
+
+/*
+ * Advanced ATA IDENTIFY spoofing
+ * Modifies additional fields for deeper spoofing
+ */
+VOID DiskSpoof_AdvancedAtaIdentify(PAHCI_FIS_IDENTIFY Identify) {
+    if (!Identify || !g_DiskSpoofContext.Initialized) return;
+    
+    // Modify additional fields
+    Identify->Cylinders = 0;  // LBA only drive
+    Identify->Heads = 0;
+    Identify->SectorsPerTrack = 0;
+    
+    // Spoof capabilities to appear as newer drive
+    Identify->Config = 0x0040;  // Fixed device
+    
+    // Set modern ATA version
+    Identify->SpecificConfig = 0x0001;
+    
+    // Additional serial number randomization at firmware level
+    for (int i = 0; i < 20; i += 2) {
+        UINT16 word = (UINT16)RtlRandomEx(NULL);
+        *((UINT16*)&Identify->SerialNumber[i]) = word;
+    }
+}
+
+/*
+ * Spoof drive temperature and SMART data
+ * Modifies thermal and health readings
+ */
+typedef struct _SMART_SPOOF_DATA {
+    UINT8       Temperature;
+    UINT8       HealthPercent;
+    UINT32      PowerOnHours;
+    UINT32      PowerCycleCount;
+} SMART_SPOOF_DATA;
+
+VOID DiskSpoof_GenerateSmartData(PSMART_SPOOF_DATA SmartData) {
+    if (!SmartData) return;
+    
+    // Generate plausible temperature (30-45C)
+    SmartData->Temperature = 30 + (RtlRandomEx(NULL) % 16);
+    
+    // Generate high health percentage (95-100%)
+    SmartData->HealthPercent = 95 + (RtlRandomEx(NULL) % 6);
+    
+    // Generate low power-on hours (appears as new drive)
+    SmartData->PowerOnHours = RtlRandomEx(NULL) % 100;
+    
+    // Generate low power cycle count
+    SmartData->PowerCycleCount = RtlRandomEx(NULL) % 50;
+}
+
+/*
+ * Handle multiple disk types
+ * Unified interface for all disk spoofing
+ */
+NTSTATUS DiskSpoof_HandleDiskType(UINT32 DiskType, PVOID IdentifyData, ULONG DataLength) {
+    if (!IdentifyData || DataLength == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    switch (DiskType) {
+        case 0: // SATA/AHCI
+            DiskSpoof_AdvancedAtaIdentify((PAHCI_FIS_IDENTIFY)IdentifyData);
+            break;
+            
+        case 1: // NVMe
+            NvmeSpoof_ExtendedFeatures((PNVME_IDENTIFY_CONTROLLER)IdentifyData);
+            break;
+            
+        case 2: // USB Mass Storage
+            if (!g_UsbSpoofContext.Initialized) {
+                UsbSpoof_GenerateFakeIds();
+            }
+            break;
+            
+        case 3: // RAID Virtual Disk
+            if (!g_RaidSpoofContext.Initialized) {
+                RaidSpoof_GenerateFakeIds();
+            }
+            break;
+            
+        default:
+            return STATUS_NOT_SUPPORTED;
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Disable Windows disk write cache flush
+ * Makes drive appear as different type
+ */
+VOID DiskSpoof_ModifyCacheBehavior(PVOID DeviceExtension) {
+    // Modify device extension to change caching behavior
+    // This affects how Windows interacts with the drive
+}
+
+/*
+ * Spoof drive geometry
+ * Changes reported CHS/LBA parameters
+ */
+VOID DiskSpoof_ModifyGeometry(ULONG* Cylinders, ULONG* Heads, ULONG* Sectors) {
+    // Standard LBA drive geometry
+    *Cylinders = 0xFFFFFFFF;  // Report as LBA48
+    *Heads = 0xFF;
+    *Sectors = 0xFF;
+}
+
+/*
+ * Initialize all disk spoofing subsystems
+ */
+NTSTATUS DiskSpoof_InitializeAll(VOID) {
+    NTSTATUS status = DiskSpoof_InitializeAdvanced();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    // Initialize USB spoofing
+    UsbSpoof_GenerateFakeIds();
+    
+    // Initialize RAID spoofing
+    RaidSpoof_GenerateFakeIds();
+    
+    return STATUS_SUCCESS;
+}

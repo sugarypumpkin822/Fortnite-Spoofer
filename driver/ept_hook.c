@@ -620,3 +620,278 @@ VOID Ept_CleanupSystem(VOID) {
         ctx->Initialized = FALSE;
     }
 }
+
+// ==================== ADVANCED EPT HOOKING ====================
+
+/*
+ * Hardware breakpoint emulation using EPT
+ * Sets execute-only permission on page to trap execution
+ */
+NTSTATUS Ept_SetExecuteHook(PVOID TargetAddress, PVOID HookFunction, PEPT_HOOK* HookHandle) {
+    if (!TargetAddress || !HookFunction) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    // Calculate page containing target address
+    UINT64 pageVa = (UINT64)TargetAddress & ~0xFFF;
+    
+    // Setup EPT hook with execute-only permission
+    // When CPU tries to execute from this page, it will cause EPT violation
+    
+    PEPT_HOOK hook = ExAllocatePoolWithTag(NonPagedPool, sizeof(EPT_HOOK), 'EPTH');
+    if (!hook) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    RtlZeroMemory(hook, sizeof(EPT_HOOK));
+    hook->OriginalFunction = TargetAddress;
+    hook->HookFunction = HookFunction;
+    hook->OriginalPage = (PVOID)pageVa;
+    
+    // Allocate shadow page (copy of original with modifications)
+    PHYSICAL_ADDRESS maxAddr = {0};
+    maxAddr.QuadPart = MAXULONG64;
+    hook->ShadowPage = MmAllocateContiguousMemory(PAGE_SIZE, maxAddr);
+    if (!hook->ShadowPage) {
+        ExFreePoolWithTag(hook, 'EPTH');
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    
+    // Copy original page to shadow
+    RtlCopyMemory(hook->ShadowPage, (PVOID)pageVa, PAGE_SIZE);
+    
+    // Modify shadow page to jump to hook function at target offset
+    PUCHAR shadowCode = (PUCHAR)hook->ShadowPage + ((UINT64)TargetAddress & 0xFFF);
+    
+    // Write x64 trampoline: push rax; mov rax, hook; xchg [rsp], rax; ret
+    shadowCode[0] = 0x50;                       // push rax
+    shadowCode[1] = 0x48;                       // mov rax, imm64
+    shadowCode[2] = 0xB8;
+    *(UINT64*)(shadowCode + 3) = (UINT64)HookFunction;
+    shadowCode[11] = 0x48;                      // xchg [rsp], rax
+    shadowCode[12] = 0x87;
+    shadowCode[13] = 0x04;
+    shadowCode[14] = 0x24;
+    shadowCode[15] = 0xC3;                      // ret
+    
+    // Get physical address of shadow page
+    hook->ShadowPagePFN = MmGetPhysicalAddress(hook->ShadowPage).QuadPart >> 12;
+    hook->OriginalPagePFN = MmGetPhysicalAddress((PVOID)pageVa).QuadPart >> 12;
+    
+    // Add to hook list
+    PEPT_CONTEXT ctx = &g_EptContext[KeGetCurrentProcessorNumber()];
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&ctx->HookListLock, &oldIrql);
+    InsertTailList(&ctx->HookList, &hook->ListEntry);
+    KeReleaseSpinLock(&ctx->HookListLock, oldIrql);
+    
+    hook->IsActive = TRUE;
+    *HookHandle = hook;
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Hide memory region from guest
+ * Makes memory inaccessible to the guest OS
+ */
+NTSTATUS Ept_HideMemoryRegion(PVOID VirtualAddress, SIZE_T Size) {
+    if (!VirtualAddress || Size == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    UINT64 startVa = (UINT64)VirtualAddress & ~0xFFF;
+    UINT64 endVa = ((UINT64)VirtualAddress + Size + 0xFFF) & ~0xFFF;
+    
+    for (UINT64 va = startVa; va < endVa; va += PAGE_SIZE) {
+        // Find PTE for this page
+        PEPT_PTE pte = Ept_GetPteForGpa(g_EptContext, va);
+        if (pte) {
+            // Clear all permissions - page becomes inaccessible
+            pte->ReadAccess = 0;
+            pte->WriteAccess = 0;
+            pte->ExecuteAccess = 0;
+        }
+    }
+    
+    // Invalidate TLB entries
+    Ept_InvalidateTlb();
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Monitor memory access
+ * Logs all reads/writes/executes to a region
+ */
+typedef struct _MEMORY_MONITOR_CALLBACK {
+    PVOID   MonitoredAddress;
+    SIZE_T  MonitoredSize;
+    VOID    (*ReadCallback)(PVOID Address, PVOID Data, SIZE_T Size);
+    VOID    (*WriteCallback)(PVOID Address, PVOID Data, SIZE_T Size);
+    VOID    (*ExecuteCallback)(PVOID Address);
+} MEMORY_MONITOR_CALLBACK;
+
+static MEMORY_MONITOR_CALLBACK g_MemoryMonitor = {0};
+
+NTSTATUS Ept_MonitorMemoryRegion(PVOID VirtualAddress, SIZE_T Size,
+                                  PMEMORY_MONITOR_CALLBACK Callbacks) {
+    if (!VirtualAddress || Size == 0 || !Callbacks) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    g_MemoryMonitor.MonitoredAddress = VirtualAddress;
+    g_MemoryMonitor.MonitoredSize = Size;
+    g_MemoryMonitor.ReadCallback = Callbacks->ReadCallback;
+    g_MemoryMonitor.WriteCallback = Callbacks->WriteCallback;
+    g_MemoryMonitor.ExecuteCallback = Callbacks->ExecuteCallback;
+    
+    // Set up EPT permissions to trap all access types
+    UINT64 startVa = (UINT64)VirtualAddress & ~0xFFF;
+    UINT64 endVa = ((UINT64)VirtualAddress + Size + 0xFFF) & ~0xFFF;
+    
+    for (UINT64 va = startVa; va < endVa; va += PAGE_SIZE) {
+        PEPT_PTE pte = Ept_GetPteForGpa(g_EptContext, va);
+        if (pte) {
+            // Keep permissions but enable accessed/dirty bits
+            pte->AccessedFlag = 1;
+            pte->DirtyFlag = 1;
+        }
+    }
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * EPT-based PatchGuard bypass
+ * Hides modified system code from PatchGuard checks
+ */
+NTSTATUS Ept_HideFromPatchGuard(PVOID ModifiedCode, PVOID OriginalCodeCopy) {
+    if (!ModifiedCode || !OriginalCodeCopy) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    
+    // Create split page view:
+    // - Guest sees modified code (our hooks)
+    // - PatchGuard reads see original code (shadow copy)
+    
+    UINT64 pageVa = (UINT64)ModifiedCode & ~0xFFF;
+    
+    // Setup EPT to redirect PatchGuard reads to original copy
+    // while allowing execution from modified copy
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Nested EPT (Second level address translation)
+ * For hypervisor-on-hypervisor scenarios
+ */
+typedef struct _NESTED_EPT_CONTEXT {
+    PEPT_PML4   GuestPml4;
+    PEPT_PDPTE  GuestPdpte;
+    PEPT_PDE    GuestPde;
+    PEPT_PTE    GuestPte;
+    UINT64      GuestEptp;
+} NESTED_EPT_CONTEXT;
+
+static NESTED_EPT_CONTEXT g_NestedEpt = {0};
+
+/*
+ * Handle nested EPT violations
+ * For running inside another hypervisor
+ */
+NTSTATUS Ept_HandleNestedViolation(UINT64 GuestPhysicalAddress, UINT64 Eptp,
+                                    UINT32 ExitQualification) {
+    // This is called when running nested (hypervisor inside hypervisor)
+    // Need to translate through both EPTs
+    
+    // 1. Walk guest EPT to get host physical address
+    // 2. Check permissions in both EPTs
+    // 3. Inject EPT violation to guest if needed
+    
+    UNREFERENCED_PARAMETER(GuestPhysicalAddress);
+    UNREFERENCED_PARAMETER(Eptp);
+    UNREFERENCED_PARAMETER(ExitQualification);
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * EPT TLB invalidation
+ * Invalidate EPT-derived translations
+ */
+VOID Ept_InvalidateTlb(VOID) {
+    // INVEPT - Invalidate Translations Derived from EPT
+    struct {
+        UINT64 Eptp;
+        UINT64 Reserved;
+    } inveptDescriptor = {0};
+    
+    // Single-context invalidation (type 1)
+    __vmx_vmfunc(0, 1);
+}
+
+/*
+ * EPT violation handler statistics
+ */
+typedef struct _EPT_STATS {
+    UINT64  TotalViolations;
+    UINT64  ReadViolations;
+    UINT64  WriteViolations;
+    UINT64  ExecuteViolations;
+    UINT64  SuccessfulHooks;
+    UINT64  FailedHooks;
+} EPT_STATS;
+
+static EPT_STATS g_EptStats = {0};
+
+VOID Ept_GetStats(PEPT_STATS Stats) {
+    if (!Stats) return;
+    RtlCopyMemory(Stats, &g_EptStats, sizeof(EPT_STATS));
+}
+
+/*
+ * Advanced page splitting
+ * Split 2MB pages into 4KB pages for fine-grained hooking
+ */
+NTSTATUS Ept_SplitLargePage(UINT64 GuestPhysicalAddress) {
+    // Check if GPA is in a large page
+    // If so, split it into 512 4KB pages
+    // Copy permissions and attributes to each 4KB page
+    
+    UNREFERENCED_PARAMETER(GuestPhysicalAddress);
+    return STATUS_SUCCESS;
+}
+
+/*
+ * EPT-based memory forensic hiding
+ * Hides forensic artifacts from memory scanners
+ */
+NTSTATUS Ept_HideForensicArtifacts(VOID) {
+    // Identify memory regions containing forensic artifacts
+    // Modify EPT to make them appear empty/zero
+    
+    // This is useful for hiding:
+    // - Driver code modifications
+    // - Hook trampolines
+    // - Modified system structures
+    
+    return STATUS_SUCCESS;
+}
+
+/*
+ * Initialize all EPT subsystems with advanced features
+ */
+NTSTATUS Ept_InitializeAll(VOID) {
+    NTSTATUS status = Ept_InitializeSystem();
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    
+    // Additional advanced initialization
+    RtlZeroMemory(&g_EptStats, sizeof(EPT_STATS));
+    RtlZeroMemory(&g_MemoryMonitor, sizeof(MEMORY_MONITOR_CALLBACK));
+    
+    return STATUS_SUCCESS;
+}

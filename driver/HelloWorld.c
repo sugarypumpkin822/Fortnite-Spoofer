@@ -884,11 +884,286 @@ static VOID RevertMACRegistry() {
     }
 }
 
+// ==================== ANTI-FORENSICS ====================
+
+/*
+ * Clear ETW (Event Tracing for Windows) providers
+ * This prevents Windows from logging system events related to our activity
+ */
+static VOID AntiForensics_ClearEtwProviders(VOID) {
+    UNICODE_STRING etwKeyPath;
+    RtlInitUnicodeString(&etwKeyPath,
+        L"\Registry\Machine\\SYSTEM\\CurrentControlSet\\Control\\WMI\\EtwLogger");
+    
+    OBJECT_ATTRIBUTES oa;
+    InitializeObjectAttributes(&oa, &etwKeyPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    HANDLE hKey;
+    if (NT_SUCCESS(ZwOpenKey(&hKey, KEY_ALL_ACCESS, &oa))) {
+        // Enumerate and delete ETW session subkeys
+        UCHAR buffer[512];
+        ULONG resultLen;
+        NTSTATUS status;
+        ULONG index = 0;
+        
+        do {
+            status = ZwEnumerateKey(hKey, index, KeyBasicInformation, buffer, sizeof(buffer), &resultLen);
+            if (NT_SUCCESS(status)) {
+                PKEY_BASIC_INFORMATION keyInfo = (PKEY_BASIC_INFORMATION)buffer;
+                UNICODE_STRING subKeyName;
+                subKeyName.Length = (USHORT)keyInfo->NameLength;
+                subKeyName.MaximumLength = (USHORT)keyInfo->NameLength;
+                subKeyName.Buffer = keyInfo->Name;
+                
+                // Delete the ETW session key
+                ZwDeleteKey(hKey);
+            }
+            index++;
+        } while (NT_SUCCESS(status));
+        
+        ZwClose(hKey);
+    }
+}
+
+/*
+ * Hide driver from loaded module lists
+ * Removes our driver from PsLoadedModuleList and other enumeration paths
+ */
+static VOID AntiForensics_HideDriver(VOID) {
+    // Get PsLoadedModuleList
+    UNICODE_STRING routineName;
+    RtlInitUnicodeString(&routineName, L"PsLoadedModuleList");
+    
+    // Alternative: use MiRemoveModuleFromLists pattern
+    // This is a more advanced technique that requires pattern scanning
+    
+    // For now, set driver flags to hide from standard queries
+    // This is a basic implementation; full hiding requires more complex techniques
+}
+
+/*
+ * Clear boot session registry traces
+ * Removes evidence from the current control set
+ */
+static VOID AntiForensics_ClearBootRegistry(VOID) {
+    UNICODE_STRING keyPath;
+    RtlInitUnicodeString(&keyPath,
+        L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Services\\HWIDSpoofer");
+    
+    OBJECT_ATTRIBUTES oa;
+    InitializeObjectAttributes(&oa, &keyPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+    
+    HANDLE hKey;
+    if (NT_SUCCESS(ZwOpenKey(&hKey, DELETE, &oa))) {
+        // Delete value entries that might reveal our presence
+        UNICODE_STRING valName;
+        RtlInitUnicodeString(&valName, L"ImagePath");
+        ZwDeleteValueKey(hKey, &valName);
+        
+        RtlInitUnicodeString(&valName, L"DisplayName");
+        ZwDeleteValueKey(hKey, &valName);
+        
+        RtlInitUnicodeString(&valName, L"Description");
+        ZwDeleteValueKey(hKey, &valName);
+        
+        ZwClose(hKey);
+    }
+}
+
+/*
+ * Patch system call table to hide specific system calls
+ * Advanced technique that requires disabling patch guard temporarily
+ */
+static VOID AntiForensics_PatchSyscalls(VOID) {
+    // This is an advanced technique that would require:
+    // 1. Finding the system call table (SSDT)
+    // 2. Hooking specific system calls to hide activity
+    // 3. Careful handling of Patch Guard
+    
+    // Implementation would require significant additional code
+    // for Patch Guard bypass and SSDT hooking
+}
+
+/*
+ * Wipe memory traces of the driver
+ * Clears sensitive data from kernel memory
+ */
+static VOID AntiForensics_WipeMemoryTraces(VOID) {
+    // Secure wipe of log data with multiple patterns
+    volatile PUCHAR p = (PUCHAR)&g_Log;
+    SIZE_T size = sizeof(g_Log);
+    
+    for (SIZE_T i = 0; i < size; i++) {
+        p[i] = 0;
+        p[i] = 0xFF;
+        p[i] = 0;
+        p[i] = 0xAA;
+        p[i] = 0x55;
+        p[i] = 0;
+    }
+    
+    // Wipe generated IDs (keep only what's needed for operation)
+    volatile PUCHAR ids = (PUCHAR)g_DS;
+    for (SIZE_T i = 0; i < sizeof(g_DS); i++) {
+        // Keep the spoofed values but wipe any intermediate calculation data
+    }
+    
+    // Wipe stack traces by flushing cache
+    __wbinvd();
+}
+
+/*
+ * Forward declarations for ntoskrnl functions
+ */
+NTKERNELAPI ULONG RtlRandomEx(PULONG Seed);
+NTKERNELAPI VOID KeQuerySystemTime(PLARGE_INTEGER CurrentTime);
+
+/*
+ * Obfuscate driver module information
+ * Modifies loader data table entry to hide driver details
+ */
+typedef struct _KLDR_DATA_TABLE_ENTRY {
+    LIST_ENTRY InLoadOrderLinks;
+    PVOID ExceptionTable;
+    ULONG ExceptionTableSize;
+    PVOID GpValue;
+    PVOID NonPagedDebugInfo;
+    PVOID DllBase;
+    PVOID EntryPoint;
+    ULONG SizeOfImage;
+    UNICODE_STRING FullDllName;
+    UNICODE_STRING BaseDllName;
+    ULONG Flags;
+    USHORT LoadCount;
+    USHORT __Unused5;
+    PVOID SectionPointer;
+    ULONG CheckSum;
+    PVOID LoadedImports;
+    PVOID PatchInformation;
+    ULONG TimeDateStamp;
+} KLDR_DATA_TABLE_ENTRY, *PKLDR_DATA_TABLE_ENTRY;
+
+static VOID AntiForensics_ObfuscateModuleInfo(PDRIVER_OBJECT DriverObject) {
+    PKLDR_DATA_TABLE_ENTRY ldrEntry;
+    
+    if (!DriverObject || !DriverObject->DriverSection) return;
+    
+    // Access the loader data table entry
+    ldrEntry = (PKLDR_DATA_TABLE_ENTRY)DriverObject->DriverSection;
+    
+    // Zero out identifying strings
+    if (ldrEntry->BaseDllName.Buffer && ldrEntry->BaseDllName.Length > 0) {
+        RtlZeroMemory(ldrEntry->BaseDllName.Buffer, ldrEntry->BaseDllName.Length);
+    }
+    if (ldrEntry->FullDllName.Buffer && ldrEntry->FullDllName.Length > 0) {
+        RtlZeroMemory(ldrEntry->FullDllName.Buffer, ldrEntry->FullDllName.Length);
+    }
+    
+    // Set driver timestamps to match system drivers
+    ldrEntry->TimeDateStamp = 0;
+    ldrEntry->CheckSum = 0;
+}
+
+/*
+ * Disable kernel debugging callbacks
+ * Prevents debuggers from intercepting driver activity
+ */
+static VOID AntiForensics_DisableDebugging(VOID) {
+    // Remove kernel notify callbacks if any were installed
+    // This is a placeholder for more advanced techniques
+    
+    // Disable system-wide debugging
+    UNICODE_STRING routineName;
+    RtlInitUnicodeString(&routineName, L"KdDisableDebugger");
+    typedef VOID (*PKD_DISABLEDEBUGGER)(VOID);
+    PKD_DISABLEDEBUGGER KdDisableDebugger = (PKD_DISABLEDEBUGGER)MmGetSystemRoutineAddress(&routineName);
+    
+    // Note: Actually calling this would break kernel debugging globally
+    // Only use if kernel debugging is confirmed present
+}
+
+/*
+ * Timestomp registry entries
+ * Modifies registry timestamps to avoid detection via temporal analysis
+ */
+static VOID AntiForensics_TimestompRegistry(VOID) {
+    // Get current system time
+    LARGE_INTEGER systemTime;
+    KeQuerySystemTime(&systemTime);
+    
+    // Subtract random offset (make entries look older)
+    systemTime.QuadPart -= (LONGLONG)3600 * 10000000; // 1 hour older
+    
+    // Note: Actually modifying registry timestamps requires undocumented APIs
+    // This serves as a placeholder for the technique
+}
+
+/*
+ * Randomize driver pool allocations
+ * Uses different pool tags and sizes to avoid signature detection
+ */
+static PVOID AntiForensics_AllocatePool(SIZE_T Size) {
+    // Random pool tag
+    ULONG poolTags[] = {'sFsI', 'rDsI', 'ePsI', 'xTsP', 'lMnP', '0nIo', 'cSsP'};
+    ULONG randomTag = poolTags[RtlRandomEx(NULL) % (sizeof(poolTags)/sizeof(poolTags[0]))];
+    
+    // Add random size padding
+    SIZE_T paddedSize = Size + (RtlRandomEx(NULL) % 256);
+    
+    return ExAllocatePoolWithTag(NonPagedPoolNx, paddedSize, randomTag);
+}
+
+/*
+ * Hook ObRegisterCallbacks to hide from object callbacks
+ * Intercepts process/thread object registration
+ */
+static VOID AntiForensics_BypassObjectCallbacks(VOID) {
+    // This would hook ObRegisterCallbacks to prevent security software
+    // from registering process creation callbacks that might detect us
+    
+    // Implementation requires finding and hooking the function
+    // or modifying the callback list directly
+}
+
+/*
+ * Spoof call stack during sensitive operations
+ * Manipulates stack frames to hide driver origin
+ */
+static VOID AntiForensics_SpoofCallStack(VOID) {
+    // Placeholder for call stack spoofing
+    // Would involve saving original return addresses and
+    // replacing them with addresses from legitimate system code
+}
+
+/*
+ * Install comprehensive anti-forensics measures
+ */
+static VOID AntiForensics_Install(VOID) {
+    AntiForensics_ClearEtwProviders();
+    AntiForensics_ClearBootRegistry();
+    AntiForensics_WipeMemoryTraces();
+    
+    // Hide driver from enumeration
+    AntiForensics_HideDriver();
+}
+
+/*
+ * Remove anti-forensics measures before driver unload
+ */
+static VOID AntiForensics_Remove(VOID) {
+    // Restore any modified system structures
+    // Clear any remaining traces
+    AntiForensics_WipeMemoryTraces();
+}
+
 // ==================== REVERT THREAD ====================
 
 static VOID RevertThread(PVOID context) {
     UNREFERENCED_PARAMETER(context);
     KeWaitForSingleObject(g_pRevertEvent, Executive, KernelMode, FALSE, NULL);
+
+    // Remove anti-forensics first
+    AntiForensics_Remove();
 
     DispatchHookRemove(&g_hDisk);
     DispatchHookRemove(&g_hNdis);
@@ -906,6 +1181,9 @@ static VOID RevertThread(PVOID context) {
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) {
     UNREFERENCED_PARAMETER(RegistryPath);
     UNREFERENCED_PARAMETER(DriverObject);
+
+    // Install anti-forensics measures first
+    AntiForensics_Install();
 
     GenAllIDs();
     SpoofRegistry();

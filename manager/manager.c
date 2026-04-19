@@ -23,6 +23,7 @@
 #include <commctrl.h>
 
 #include "resource.h"
+#include "trace_cleaner.h"
 
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -41,29 +42,62 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 #define IOCTL_NAL_MAP      0x80862007
 
-// ==================== COLORS ====================
+// ==================== COLORS - HEX SPOOFER THEME ====================
 
-#define CLR_BG          RGB(18, 18, 30)
-#define CLR_PANEL       RGB(26, 26, 46)
-#define CLR_BORDER      RGB(50, 50, 80)
-#define CLR_TEXT         RGB(200, 200, 220)
-#define CLR_TEXT_DIM     RGB(120, 120, 150)
-#define CLR_ACCENT       RGB(99, 102, 241)
+#define CLR_BG           RGB(10, 10, 14)
+#define CLR_PANEL        RGB(18, 18, 26)
+#define CLR_BORDER       RGB(40, 40, 55)
+#define CLR_TEXT         RGB(230, 230, 240)
+#define CLR_TEXT_DIM     RGB(130, 130, 150)
+#define CLR_ACCENT       RGB(236, 72, 153)  // Pink/Magenta accent
+#define CLR_ACCENT_SEC   RGB(139, 92, 246)  // Purple accent
 #define CLR_GREEN        RGB(34, 197, 94)
 #define CLR_RED          RGB(239, 68, 68)
-#define CLR_ORANGE       RGB(249, 115, 22)
-#define CLR_BTN_CHANGE   RGB(79, 70, 229)
-#define CLR_BTN_REVERT   RGB(220, 38, 38)
-#define CLR_BTN_HOVER_C  RGB(99, 90, 249)
-#define CLR_BTN_HOVER_R  RGB(248, 58, 58)
+#define CLR_ORANGE       RGB(245, 158, 11)
+#define CLR_BTN_MAIN     RGB(236, 72, 153)   // Pink main button
+#define CLR_BTN_MAIN_H   RGB(251, 113, 133) // Pink hover
+#define CLR_BTN_SPOOF    RGB(139, 92, 246)   // Purple spoof button  
+#define CLR_BTN_SPOOF_H  RGB(167, 139, 250) // Purple hover
 #define CLR_WHITE        RGB(255, 255, 255)
+#define CLR_CHECKBOX     RGB(236, 72, 153)  // Checkbox color
+#define CLR_SECTION_BG   RGB(22, 22, 32)    // Section background
 
 // ==================== CONTROL IDS ====================
 
-#define IDC_BTN_CHANGE      1001
-#define IDC_BTN_REVERT      1002
+// WiFi Functions
+#define IDC_CHK_FLUSH_DNS    1001
+#define IDC_CHK_TCP_RESET    1002
+#define IDC_CHK_WIFI_RESET   1003
+
+// File Functions  
+#define IDC_CHK_TEMP_FILES   1004
+#define IDC_CHK_WIN_TEMP     1005
+#define IDC_CHK_WIN_LOGS     1006
+
+// Browser Functions
+#define IDC_CHK_CHROME_COOK  1007
+#define IDC_CHK_FIREFOX_COOK 1008
+
+// Anti-Cheat
+#define IDC_CHK_ANTICHEAT_TRACE 1009
+#define IDC_CHK_FORTNITE     1010
+#define IDC_CHK_FIVEM        1011
+#define IDC_CHK_VALORANT     1012
+
+// Unlink Functions
+#define IDC_CHK_UNLINK_XBOX  1013
+#define IDC_CHK_UNLINK_DISCORD 1014
+
+// Action Buttons
+#define IDC_BTN_START_CLEAN  1100
+#define IDC_BTN_SPOOF_ALL    1101
+
+// Old IDs for compatibility
+#define IDC_BTN_CHANGE       1001
+#define IDC_BTN_REVERT       1002
 #define IDC_COMBO_DURATION   1003
 #define IDC_BTN_REFRESH      1004
+#define IDC_BTN_CLEAN_TRACES 1005
 #define IDT_DURATION_TIMER   2001
 #define IDT_COUNTDOWN_TIMER  2002
 
@@ -78,7 +112,7 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 static HINSTANCE g_hInst;
 static HWND g_hWnd;
-static HWND g_hBtnChange, g_hBtnRevert, g_hComboDuration, g_hBtnRefresh;
+static HWND g_hBtnChange, g_hBtnRevert, g_hComboDuration, g_hBtnRefresh, g_hBtnCleanTraces;
 static HFONT g_hFontTitle, g_hFontNormal, g_hFontSmall, g_hFontBold, g_hFontMono;
 static HBRUSH g_hBrBg, g_hBrPanel, g_hBrBorder;
 
@@ -226,6 +260,30 @@ static CHAR g_TimeRemaining[64] = "";
 
 static BOOL g_HoverChange = FALSE;
 static BOOL g_HoverRevert = FALSE;
+static BOOL g_HoverCleanTraces = FALSE;
+
+// Checkbox states for Hex GUI
+static BOOL g_ChkFlushDNS = FALSE;
+static BOOL g_ChkTCPReset = FALSE;
+static BOOL g_ChkWiFiReset = FALSE;
+static BOOL g_ChkTempFiles = TRUE;   // Default ON
+static BOOL g_ChkWinTemp = TRUE;       // Default ON
+static BOOL g_ChkWinLogs = TRUE;       // Default ON
+static BOOL g_ChkChromeCookies = TRUE; // Default ON
+static BOOL g_ChkFirefoxCookies = TRUE; // Default ON
+static BOOL g_ChkAntiCheatTrace = FALSE;
+static BOOL g_ChkFortnite = FALSE;
+static BOOL g_ChkFiveM = FALSE;
+static BOOL g_ChkValorant = FALSE;
+static BOOL g_ChkUnlinkXbox = FALSE;
+static BOOL g_ChkUnlinkDiscord = FALSE;
+
+// Button hover states
+static BOOL g_HoverStartClean = FALSE;
+static BOOL g_HoverSpoofAll = FALSE;
+
+// Checkbox hover tracking
+static int g_HoverCheckbox = -1;
 
 // ==================== PROTOTYPES ====================
 
@@ -242,6 +300,9 @@ BOOL GetVolumeSerialNum(ULONG* serial);
 BOOL GetGPUID(char* buffer, size_t bufferSize);
 void DoSpoofHWID();
 void DoRevertHWID();
+void DoCleanTraces();
+void DoStartCleaning();
+void DoSpoofAll();
 void UpdateStatus();
 void RefreshCurrentHWIDs();
 BOOL CreateHiddenTempDirectory();
@@ -313,12 +374,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
     wc.hIconSm        = LoadIcon(NULL, IDI_SHIELD);
     RegisterClassExA(&wc);
 
-    int wndW = 540, wndH = 940;
+    int wndW = 700, wndH = 850;  // Wider, more compact layout
     int scrW = GetSystemMetrics(SM_CXSCREEN);
     int scrH = GetSystemMetrics(SM_CYSCREEN);
 
     g_hWnd = CreateWindowExA(
-        0, "HWIDSpooferWnd", "HWID Spoofer",
+        0, "HWIDSpooferWnd", "Hex Spoofer - Cleaner",
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
         (scrW - wndW) / 2, (scrH - wndH) / 2, wndW, wndH,
         NULL, NULL, hInstance, NULL);
@@ -338,15 +399,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrev, LPSTR lpCmd, int nShow)
 // ==================== FONTS ====================
 
 void InitFonts() {
-    g_hFontTitle  = CreateFontA(22, 0, 0, 0, FW_BOLD, 0, 0, 0,
+    g_hFontTitle  = CreateFontA(28, 0, 0, 0, FW_BOLD, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, "Segoe UI");
-    g_hFontNormal = CreateFontA(15, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    g_hFontNormal = CreateFontA(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, "Segoe UI");
-    g_hFontSmall  = CreateFontA(13, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    g_hFontSmall  = CreateFontA(11, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, "Segoe UI");
-    g_hFontBold   = CreateFontA(15, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
+    g_hFontBold   = CreateFontA(13, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, "Segoe UI");
-    g_hFontMono   = CreateFontA(14, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+    g_hFontMono   = CreateFontA(12, 0, 0, 0, FW_NORMAL, 0, 0, 0,
         DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, "Consolas");
 }
 
@@ -390,7 +451,8 @@ void DrawTextLine(HDC hdc, int x, int y, const char* label, const char* value, C
 }
 
 void DrawButton(HDC hdc, RECT* rc, const char* text, COLORREF bgColor, BOOL hover) {
-    COLORREF col = hover ? (bgColor == CLR_BTN_CHANGE ? CLR_BTN_HOVER_C : CLR_BTN_HOVER_R) : bgColor;
+    COLORREF col = hover ? (bgColor == CLR_BTN_MAIN ? CLR_BTN_MAIN_H : 
+                             (bgColor == CLR_BTN_SPOOF ? CLR_BTN_SPOOF_H : bgColor)) : bgColor;
     HBRUSH br = CreateSolidBrush(col);
     HPEN pen = CreatePen(PS_SOLID, 1, col);
     SelectObject(hdc, br);
@@ -399,6 +461,83 @@ void DrawButton(HDC hdc, RECT* rc, const char* text, COLORREF bgColor, BOOL hove
     DeleteObject(br);
     DeleteObject(pen);
 
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, CLR_WHITE);
+    SelectObject(hdc, g_hFontBold);
+    DrawTextA(hdc, text, -1, rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+// ==================== HEX GUI HELPERS ====================
+
+void DrawSection(HDC hdc, int x, int y, int w, int h, const char* title) {
+    // Section background
+    HBRUSH br = CreateSolidBrush(CLR_SECTION_BG);
+    HPEN pen = CreatePen(PS_SOLID, 1, CLR_BORDER);
+    SelectObject(hdc, br);
+    SelectObject(hdc, pen);
+    RoundRect(hdc, x, y, x + w, y + h, 6, 6);
+    DeleteObject(br);
+    DeleteObject(pen);
+    
+    // Title
+    SetBkMode(hdc, TRANSPARENT);
+    SelectObject(hdc, g_hFontBold);
+    SetTextColor(hdc, CLR_ACCENT);
+    TextOutA(hdc, x + 12, y + 8, title, (int)strlen(title));
+}
+
+void DrawCheckbox(HDC hdc, int x, int y, int size, BOOL checked, BOOL hovered, const char* label, int labelX) {
+    // Checkbox background
+    COLORREF boxColor = hovered ? CLR_ACCENT : CLR_BORDER;
+    HBRUSH br = CreateSolidBrush(checked ? CLR_CHECKBOX : CLR_PANEL);
+    HPEN pen = CreatePen(PS_SOLID, 2, boxColor);
+    SelectObject(hdc, br);
+    SelectObject(hdc, pen);
+    RoundRect(hdc, x, y, x + size, y + size, 4, 4);
+    DeleteObject(br);
+    DeleteObject(pen);
+    
+    // Checkmark
+    if (checked) {
+        HPEN checkPen = CreatePen(PS_SOLID, 2, CLR_WHITE);
+        SelectObject(hdc, checkPen);
+        
+        // Draw checkmark
+        MoveToEx(hdc, x + 4, y + size/2, NULL);
+        LineTo(hdc, x + size/2 - 2, y + size - 5);
+        LineTo(hdc, x + size - 4, y + 4);
+        
+        DeleteObject(checkPen);
+    }
+    
+    // Label
+    SetBkMode(hdc, TRANSPARENT);
+    SelectObject(hdc, g_hFontNormal);
+    SetTextColor(hdc, checked ? CLR_TEXT : CLR_TEXT_DIM);
+    TextOutA(hdc, labelX, y + 2, label, (int)strlen(label));
+}
+
+void DrawHexButton(HDC hdc, RECT* rc, const char* text, COLORREF bgColor, BOOL hover) {
+    COLORREF col = hover ? 
+        (bgColor == CLR_BTN_MAIN ? RGB(244, 114, 182) : RGB(167, 139, 250)) : bgColor;
+    
+    // Button shadow
+    HBRUSH shadowBr = CreateSolidBrush(RGB(0, 0, 0));
+    SelectObject(hdc, shadowBr);
+    SelectObject(hdc, GetStockObject(NULL_PEN));
+    RoundRect(hdc, rc->left + 2, rc->top + 2, rc->right + 2, rc->bottom + 2, 10, 10);
+    DeleteObject(shadowBr);
+    
+    // Button background
+    HBRUSH br = CreateSolidBrush(col);
+    HPEN pen = CreatePen(PS_SOLID, 1, col);
+    SelectObject(hdc, br);
+    SelectObject(hdc, pen);
+    RoundRect(hdc, rc->left, rc->top, rc->right, rc->bottom, 10, 10);
+    DeleteObject(br);
+    DeleteObject(pen);
+    
+    // Button text
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, CLR_WHITE);
     SelectObject(hdc, g_hFontBold);
@@ -499,169 +638,118 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // Background
         FillRect(memDC, &clientRect, g_hBrBg);
 
-        // Title
+        // Title with Hex styling
         SetBkMode(memDC, TRANSPARENT);
         SelectObject(memDC, g_hFontTitle);
-        SetTextColor(memDC, CLR_WHITE);
-        TextOutA(memDC, 20, 16, "HWID Spoofer", 12);
+        SetTextColor(memDC, CLR_ACCENT);
+        TextOutA(memDC, 25, 20, "Hex", 3);
+        
+        SIZE sz;
+        GetTextExtentPoint32A(memDC, "Hex", 3, &sz);
+        SetTextColor(memDC, CLR_TEXT);
+        TextOutA(memDC, 25 + sz.cx + 8, 20, "- Cleaner", 9);
 
-        // Status badge
-        SelectObject(memDC, g_hFontBold);
-        SetTextColor(memDC, g_StatusColor);
-        {
-            char statusBuf[300];
-            sprintf_s(statusBuf, sizeof(statusBuf), "[%s]", g_StatusText);
-            SIZE sz;
-            GetTextExtentPoint32A(memDC, statusBuf, (int)strlen(statusBuf), &sz);
-            TextOutA(memDC, clientRect.right - sz.cx - 20, 20, statusBuf, (int)strlen(statusBuf));
-        }
-
-        // === Panel 1: Original HWIDs (saved at startup, never changes) ===
-        RECT panelOrig = {20, 55, clientRect.right - 20, 225};
-        DrawPanel(memDC, &panelOrig, "ORIGINAL HARDWARE IDs");
-        {
-            int y = panelOrig.top + 32;
-            char macStr[32];
-            DrawTextLine(memDC, 34, y, "Disk Serial:", g_OriginalDiskSerial, CLR_TEXT); y += 19;
-            if (g_OriginalMACValid)
-                sprintf_s(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                    g_OriginalMAC[0], g_OriginalMAC[1], g_OriginalMAC[2],
-                    g_OriginalMAC[3], g_OriginalMAC[4], g_OriginalMAC[5]);
-            else strcpy_s(macStr, sizeof(macStr), "(unknown)");
-            DrawTextLine(memDC, 34, y, "MAC Address:", macStr, CLR_TEXT); y += 19;
-            DrawTextLine(memDC, 34, y, "BIOS Serial:", g_OrigBIOSSerial, CLR_TEXT); y += 19;
-            DrawTextLine(memDC, 34, y, "Board Serial:", g_OrigBoardSerial, CLR_TEXT); y += 19;
-            DrawTextLine(memDC, 34, y, "System UUID:", g_OrigSystemUUID, CLR_TEXT); y += 19;
-            { char vb[32];
-              if (g_OrigVolumeSerialValid) sprintf_s(vb, sizeof(vb), "%08X", g_OrigVolumeSerial);
-              else strcpy_s(vb, sizeof(vb), "(not available)");
-              DrawTextLine(memDC, 34, y, "Volume Serial:", vb, CLR_TEXT); } y += 19;
-            DrawTextLine(memDC, 34, y, "GPU ID:", g_OrigGPUID, CLR_TEXT);
-        }
-
-        // === Panel 2: Current HWIDs (live detection — reflects spoof when active) ===
-        RECT panelCurr = {20, 233, clientRect.right - 20, 403};
-        DrawPanel(memDC, &panelCurr, "CURRENT HARDWARE IDs");
-        {
-            int y = panelCurr.top + 32;
-            char macStr[32];
-            COLORREF cDisk = (g_SpooferLoaded && strcmp(g_OriginalDiskSerial, g_CurrentDiskSerial) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "Disk Serial:", g_CurrentDiskSerial, cDisk); y += 19;
-
-            if (g_CurrentMACValid)
-                sprintf_s(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                    g_CurrentMAC[0], g_CurrentMAC[1], g_CurrentMAC[2],
-                    g_CurrentMAC[3], g_CurrentMAC[4], g_CurrentMAC[5]);
-            else strcpy_s(macStr, sizeof(macStr), "(unknown)");
-            COLORREF cMac = (g_SpooferLoaded && g_CurrentMACValid && g_OriginalMACValid &&
-                memcmp(g_OriginalMAC, g_CurrentMAC, 6) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "MAC Address:", macStr, cMac); y += 19;
-
-            COLORREF cBios = (g_SpooferLoaded && strcmp(g_OrigBIOSSerial, g_CurrBIOSSerial) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "BIOS Serial:", g_CurrBIOSSerial, cBios); y += 19;
-            COLORREF cBoard = (g_SpooferLoaded && strcmp(g_OrigBoardSerial, g_CurrBoardSerial) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "Board Serial:", g_CurrBoardSerial, cBoard); y += 19;
-            COLORREF cUuid = (g_SpooferLoaded && strcmp(g_OrigSystemUUID, g_CurrSystemUUID) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "System UUID:", g_CurrSystemUUID, cUuid); y += 19;
-            { char vb[32];
-              if (g_CurrVolumeSerialValid) sprintf_s(vb, sizeof(vb), "%08X", g_CurrVolumeSerial);
-              else strcpy_s(vb, sizeof(vb), "(not available)");
-              COLORREF cVol = (g_SpooferLoaded && g_CurrVolumeSerial != g_OrigVolumeSerial) ? CLR_GREEN : CLR_TEXT;
-              DrawTextLine(memDC, 34, y, "Volume Serial:", vb, cVol); } y += 19;
-            COLORREF cGpu = (g_SpooferLoaded && strcmp(g_OrigGPUID, g_CurrGPUID) != 0) ? CLR_GREEN : CLR_TEXT;
-            DrawTextLine(memDC, 34, y, "GPU ID:", g_CurrGPUID, cGpu);
-        }
-
-        // === Panel 3: Spoofed To (fake values from driver log) ===
-        RECT panelSpoof = {20, 411, clientRect.right - 20, 581};
-        DrawPanel(memDC, &panelSpoof, "SPOOFED TO");
-        {
-            int y = panelSpoof.top + 32;
-            if (g_LogLoaded) {
-                char macStr[32];
-                DrawTextLine(memDC, 34, y, "Disk Serial:", g_HwidLog.FakeDiskSerial, CLR_GREEN); y += 19;
-                sprintf_s(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-                    g_HwidLog.FakeMAC[0], g_HwidLog.FakeMAC[1], g_HwidLog.FakeMAC[2],
-                    g_HwidLog.FakeMAC[3], g_HwidLog.FakeMAC[4], g_HwidLog.FakeMAC[5]);
-                DrawTextLine(memDC, 34, y, "MAC Address:", macStr, CLR_GREEN); y += 19;
-                DrawTextLine(memDC, 34, y, "BIOS Serial:", g_HwidLog.FakeBIOSSerial, CLR_GREEN); y += 19;
-                DrawTextLine(memDC, 34, y, "Board Serial:", g_HwidLog.FakeBoardSerial, CLR_GREEN); y += 19;
-                DrawTextLine(memDC, 34, y, "System UUID:", g_HwidLog.FakeSystemUUID, CLR_GREEN); y += 19;
-                { char vb[32]; sprintf_s(vb, sizeof(vb), "%08X", g_HwidLog.FakeVolumeSerial[0]);
-                  DrawTextLine(memDC, 34, y, "Volume Serial:", vb, CLR_GREEN); } y += 19;
-                DrawTextLine(memDC, 34, y, "GPU ID:", g_HwidLog.FakeGPUId, CLR_GREEN);
-            } else {
-                DrawTextLine(memDC, 34, y, "Disk Serial:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "MAC Address:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "BIOS Serial:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "Board Serial:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "System UUID:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "Volume Serial:", "(not yet spoofed)", CLR_TEXT_DIM); y += 19;
-                DrawTextLine(memDC, 34, y, "GPU ID:", "(not yet spoofed)", CLR_TEXT_DIM);
-            }
-        }
-
-        // === Spoof Status Panel ===
-        RECT panelInfo = {20, 589, clientRect.right - 20, 706};
-        DrawPanel(memDC, &panelInfo, "SPOOF STATUS");
-        {
-            int y = panelInfo.top + 32;
-            if (g_SpooferLoaded) {
-                SetTextColor(memDC, CLR_GREEN);
-                SelectObject(memDC, g_hFontBold);
-                TextOutA(memDC, 34, y, "Spoofer is ACTIVE", 17); y += 24;
-                SelectObject(memDC, g_hFontNormal);
-                SetTextColor(memDC, CLR_TEXT_DIM);
-                const char* durNames[] = {"1 Day", "7 Days", "30 Days", "Until Reboot"};
-                char durBuf[128];
-                sprintf_s(durBuf, sizeof(durBuf), "Duration: %s", durNames[g_SelectedDuration]);
-                TextOutA(memDC, 34, y, durBuf, (int)strlen(durBuf)); y += 20;
-                if (g_SpoofExpiry > 0) {
-                    char timeBuf[128];
-                    sprintf_s(timeBuf, sizeof(timeBuf), "Time Remaining: %s", g_TimeRemaining);
-                    SetTextColor(memDC, CLR_ORANGE);
-                    TextOutA(memDC, 34, y, timeBuf, (int)strlen(timeBuf));
-                } else {
-                    TextOutA(memDC, 34, y, "Active until reboot or manual revert", 36);
-                }
-            } else {
-                SetTextColor(memDC, CLR_RED);
-                SelectObject(memDC, g_hFontBold);
-                TextOutA(memDC, 34, y, "Spoofer is INACTIVE", 19); y += 24;
-                SetTextColor(memDC, CLR_TEXT_DIM);
-                SelectObject(memDC, g_hFontNormal);
-                TextOutA(memDC, 34, y, "Select a duration and click 'Change HWID' to start.", 52); y += 20;
-                SelectObject(memDC, g_hFontSmall);
-                TextOutA(memDC, 34, y, "Disk, MAC, BIOS, Board, UUID, Volume, GPU will be randomized", 60);
-            }
-        }
-
-        // === Bottom Controls ===
-        SelectObject(memDC, g_hFontNormal);
+        // Version in corner
+        SelectObject(memDC, g_hFontSmall);
         SetTextColor(memDC, CLR_TEXT_DIM);
-        SetBkMode(memDC, TRANSPARENT);
-        TextOutA(memDC, 290, 712, "Duration:", 9);
+        TextOutA(memDC, clientRect.right - 80, 28, "v1.5.8", 6);
 
-        RECT rcChange = {20, 730, 265, 765};
-        DrawButton(memDC, &rcChange, g_SpooferLoaded ? "Randomize Again" : "Change HWID",
-                   CLR_BTN_CHANGE, g_HoverChange);
+        int col1X = 20;
+        int col2X = 240;
+        int col3X = 460;
+        int sectionY = 65;
+        int sectionW = 205;
+        int sectionH = 125;
+        int checkboxSize = 16;
 
-        RECT rcRevert = {20, 775, 265, 808};
-        DrawButton(memDC, &rcRevert, "Revert to Original", CLR_BTN_REVERT, g_HoverRevert);
-
+        // === WiFi FUNCTIONS ===
+        DrawSection(memDC, col1X, sectionY, sectionW, sectionH, "WiFi FUNCTIONS");
         {
-            RECT rcRefresh = {290, 775, 490, 808};
-            HBRUSH brRef = CreateSolidBrush(CLR_PANEL);
-            HPEN penRef = CreatePen(PS_SOLID, 1, CLR_BORDER);
-            SelectObject(memDC, brRef);
-            SelectObject(memDC, penRef);
-            RoundRect(memDC, rcRefresh.left, rcRefresh.top, rcRefresh.right, rcRefresh.bottom, 8, 8);
-            DeleteObject(brRef);
-            DeleteObject(penRef);
-            SetTextColor(memDC, CLR_ACCENT);
-            SelectObject(memDC, g_hFontNormal);
-            DrawTextA(memDC, "Refresh HWIDs", -1, &rcRefresh, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            int y = sectionY + 35;
+            int checkX = col1X + 15;
+            int labelX = checkX + checkboxSize + 8;
+            
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkFlushDNS, g_HoverCheckbox == IDC_CHK_FLUSH_DNS, "FlushDNS", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkTCPReset, g_HoverCheckbox == IDC_CHK_TCP_RESET, "TCP Reset", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkWiFiReset, g_HoverCheckbox == IDC_CHK_WIFI_RESET, "Full WiFi Reset", labelX);
         }
+
+        // === FILE FUNCTIONS ===
+        DrawSection(memDC, col2X, sectionY, sectionW, sectionH, "FILE FUNCTIONS");
+        {
+            int y = sectionY + 35;
+            int checkX = col2X + 15;
+            int labelX = checkX + checkboxSize + 8;
+            
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkTempFiles, g_HoverCheckbox == IDC_CHK_TEMP_FILES, "Temporary Files", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkWinTemp, g_HoverCheckbox == IDC_CHK_WIN_TEMP, "Windows Temp Folder", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkWinLogs, g_HoverCheckbox == IDC_CHK_WIN_LOGS, "Windows Logs", labelX);
+        }
+
+        // === BROWSER FUNCTIONS ===
+        DrawSection(memDC, col3X, sectionY, sectionW, sectionH, "BROWSER FUNCTIONS (testing)");
+        {
+            int y = sectionY + 35;
+            int checkX = col3X + 15;
+            int labelX = checkX + checkboxSize + 8;
+            
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkChromeCookies, g_HoverCheckbox == IDC_CHK_CHROME_COOK, "Chrome Cookies", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkFirefoxCookies, g_HoverCheckbox == IDC_CHK_FIREFOX_COOK, "Firefox Cookies", labelX);
+        }
+
+        // === ANTI-CHEAT TERMINATOR ===
+        int section2Y = sectionY + sectionH + 15;
+        DrawSection(memDC, col1X, section2Y, sectionW * 2 + 20, 150, "ANTI-CHEAT TERMINATOR (testing)");
+        {
+            int y = section2Y + 35;
+            int checkX = col1X + 15;
+            int labelX = checkX + checkboxSize + 8;
+            
+            // First column
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkFortnite, g_HoverCheckbox == IDC_CHK_FORTNITE, "Fortnite", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkFiveM, g_HoverCheckbox == IDC_CHK_FIVEM, "FiveM", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkValorant, g_HoverCheckbox == IDC_CHK_VALORANT, "Valorant", labelX);
+            
+            // Anti-Cheat Tracer checkbox on right side
+            int check2X = col1X + sectionW + 30;
+            int label2X = check2X + checkboxSize + 8;
+            DrawCheckbox(memDC, check2X, section2Y + 35, checkboxSize, g_ChkAntiCheatTrace, 
+                        g_HoverCheckbox == IDC_CHK_ANTICHEAT_TRACE, "Anti-Cheat Tracer", label2X);
+        }
+
+        // === UNLINK FUNCTIONS ===
+        DrawSection(memDC, col3X, section2Y, sectionW, 150, "UNLINK FUNCTIONS (testing)");
+        {
+            int y = section2Y + 35;
+            int checkX = col3X + 15;
+            int labelX = checkX + checkboxSize + 8;
+            
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkUnlinkXbox, g_HoverCheckbox == IDC_CHK_UNLINK_XBOX, "Unlink Xbox", labelX);
+            y += 22;
+            DrawCheckbox(memDC, checkX, y, checkboxSize, g_ChkUnlinkDiscord, g_HoverCheckbox == IDC_CHK_UNLINK_DISCORD, "Unlink Discord", labelX);
+        }
+
+        // === BOTTOM BUTTONS ===
+        int btnY = clientRect.bottom - 70;
+        int btnW = 200;
+        int btnH = 45;
+        int btnGap = 40;
+        int startX = (clientRect.right - (btnW * 2 + btnGap)) / 2;
+        
+        // Start Cleaning button (Pink)
+        RECT rcStartClean = {startX, btnY, startX + btnW, btnY + btnH};
+        DrawHexButton(memDC, &rcStartClean, "Start Cleaning", CLR_BTN_MAIN, g_HoverStartClean);
+        
+        // Spoof All button (Purple)
+        RECT rcSpoofAll = {startX + btnW + btnGap, btnY, startX + btnW * 2 + btnGap, btnY + btnH};
+        DrawHexButton(memDC, &rcSpoofAll, "Spoof All", CLR_BTN_SPOOF, g_HoverSpoofAll);
 
         // Blit
         BitBlt(hdc, 0, 0, clientRect.right, clientRect.bottom, memDC, 0, 0, SRCCOPY);
@@ -675,30 +763,126 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_LBUTTONDOWN: {
         int mx = LOWORD(lParam);
         int my = HIWORD(lParam);
-
-        if (mx >= 20 && mx <= 265 && my >= 730 && my <= 765) {
-            DoSpoofHWID();
+        int checkboxSize = 16;
+        
+        // Helper to check if click is in checkbox area
+        #define CHECKBOX_HIT(x, y, cx, cy) (mx >= cx && mx <= cx + checkboxSize && my >= cy && my <= cy + checkboxSize)
+        
+        int col1X = 20, col2X = 240, col3X = 460;
+        int sectionY = 65, sectionH = 125;
+        int checkX1 = col1X + 15, checkX2 = col2X + 15, checkX3 = col3X + 15;
+        
+        // WiFi Functions checkboxes
+        int yWifi = sectionY + 35;
+        if (CHECKBOX_HIT(mx, my, checkX1, yWifi)) { g_ChkFlushDNS = !g_ChkFlushDNS; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX1, yWifi + 22)) { g_ChkTCPReset = !g_ChkTCPReset; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX1, yWifi + 44)) { g_ChkWiFiReset = !g_ChkWiFiReset; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        
+        // File Functions checkboxes
+        int yFile = sectionY + 35;
+        if (CHECKBOX_HIT(mx, my, checkX2, yFile)) { g_ChkTempFiles = !g_ChkTempFiles; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX2, yFile + 22)) { g_ChkWinTemp = !g_ChkWinTemp; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX2, yFile + 44)) { g_ChkWinLogs = !g_ChkWinLogs; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        
+        // Browser Functions checkboxes
+        int yBrowser = sectionY + 35;
+        if (CHECKBOX_HIT(mx, my, checkX3, yBrowser)) { g_ChkChromeCookies = !g_ChkChromeCookies; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX3, yBrowser + 22)) { g_ChkFirefoxCookies = !g_ChkFirefoxCookies; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        
+        // Anti-Cheat checkboxes
+        int section2Y = sectionY + sectionH + 15;
+        int yAntiCheat = section2Y + 35;
+        int check2X = col1X + 15;
+        int check3X = col1X + 205 + 30;
+        
+        if (CHECKBOX_HIT(mx, my, check2X, yAntiCheat)) { g_ChkFortnite = !g_ChkFortnite; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, check2X, yAntiCheat + 22)) { g_ChkFiveM = !g_ChkFiveM; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, check2X, yAntiCheat + 44)) { g_ChkValorant = !g_ChkValorant; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, check3X, yAntiCheat)) { g_ChkAntiCheatTrace = !g_ChkAntiCheatTrace; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        
+        // Unlink Functions checkboxes
+        int yUnlink = section2Y + 35;
+        int checkX4 = col3X + 15;
+        if (CHECKBOX_HIT(mx, my, checkX4, yUnlink)) { g_ChkUnlinkXbox = !g_ChkUnlinkXbox; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        if (CHECKBOX_HIT(mx, my, checkX4, yUnlink + 22)) { g_ChkUnlinkDiscord = !g_ChkUnlinkDiscord; InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        
+        #undef CHECKBOX_HIT
+        
+        // Bottom buttons
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+        int btnY = clientRect.bottom - 70;
+        int btnW = 200, btnH = 45, btnGap = 40;
+        int startX = (clientRect.right - (btnW * 2 + btnGap)) / 2;
+        
+        // Start Cleaning button
+        if (mx >= startX && mx <= startX + btnW && my >= btnY && my <= btnY + btnH) {
+            DoStartCleaning();
             InvalidateRect(hWnd, NULL, TRUE);
+            return 0;
         }
-        else if (mx >= 20 && mx <= 265 && my >= 775 && my <= 808) {
-            DoRevertHWID();
+        
+        // Spoof All button
+        if (mx >= startX + btnW + btnGap && mx <= startX + btnW * 2 + btnGap && my >= btnY && my <= btnY + btnH) {
+            DoSpoofAll();
             InvalidateRect(hWnd, NULL, TRUE);
+            return 0;
         }
-        else if (mx >= 290 && mx <= 490 && my >= 775 && my <= 808) {
-            RefreshCurrentHWIDs();
-            InvalidateRect(hWnd, NULL, TRUE);
-        }
+        
         return 0;
     }
 
     case WM_MOUSEMOVE: {
         int mx = LOWORD(lParam);
         int my = HIWORD(lParam);
-        BOOL newHoverC = (mx >= 20 && mx <= 265 && my >= 730 && my <= 765);
-        BOOL newHoverR = (mx >= 20 && mx <= 265 && my >= 775 && my <= 808);
-        if (newHoverC != g_HoverChange || newHoverR != g_HoverRevert) {
-            g_HoverChange = newHoverC;
-            g_HoverRevert = newHoverR;
+        int checkboxSize = 16;
+        
+        int col1X = 20, col2X = 240, col3X = 460;
+        int sectionY = 65, sectionH = 125;
+        int section2Y = sectionY + sectionH + 15;
+        
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+        int btnY = clientRect.bottom - 70;
+        int btnW = 200, btnH = 45, btnGap = 40;
+        int startX = (clientRect.right - (btnW * 2 + btnGap)) / 2;
+        
+        // Check button hovers
+        BOOL newHoverStart = (mx >= startX && mx <= startX + btnW && my >= btnY && my <= btnY + btnH);
+        BOOL newHoverSpoof = (mx >= startX + btnW + btnGap && mx <= startX + btnW * 2 + btnGap && my >= btnY && my <= btnY + btnH);
+        
+        if (newHoverStart != g_HoverStartClean || newHoverSpoof != g_HoverSpoofAll) {
+            g_HoverStartClean = newHoverStart;
+            g_HoverSpoofAll = newHoverSpoof;
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        
+        // Check checkbox hovers
+        int newHoverChk = -1;
+        
+        // WiFi checkboxes
+        int yWifi = sectionY + 35;
+        if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= yWifi && my <= yWifi + checkboxSize) newHoverChk = IDC_CHK_FLUSH_DNS;
+        else if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= yWifi + 22 && my <= yWifi + 22 + checkboxSize) newHoverChk = IDC_CHK_TCP_RESET;
+        else if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= yWifi + 44 && my <= yWifi + 44 + checkboxSize) newHoverChk = IDC_CHK_WIFI_RESET;
+        // File checkboxes
+        else if (mx >= col2X + 15 && mx <= col2X + 15 + checkboxSize && my >= yWifi && my <= yWifi + checkboxSize) newHoverChk = IDC_CHK_TEMP_FILES;
+        else if (mx >= col2X + 15 && mx <= col2X + 15 + checkboxSize && my >= yWifi + 22 && my <= yWifi + 22 + checkboxSize) newHoverChk = IDC_CHK_WIN_TEMP;
+        else if (mx >= col2X + 15 && mx <= col2X + 15 + checkboxSize && my >= yWifi + 44 && my <= yWifi + 44 + checkboxSize) newHoverChk = IDC_CHK_WIN_LOGS;
+        // Browser checkboxes
+        else if (mx >= col3X + 15 && mx <= col3X + 15 + checkboxSize && my >= yWifi && my <= yWifi + checkboxSize) newHoverChk = IDC_CHK_CHROME_COOK;
+        else if (mx >= col3X + 15 && mx <= col3X + 15 + checkboxSize && my >= yWifi + 22 && my <= yWifi + 22 + checkboxSize) newHoverChk = IDC_CHK_FIREFOX_COOK;
+        // Anti-Cheat
+        else if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= section2Y + 35 && my <= section2Y + 35 + checkboxSize) newHoverChk = IDC_CHK_FORTNITE;
+        else if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= section2Y + 35 + 22 && my <= section2Y + 35 + 22 + checkboxSize) newHoverChk = IDC_CHK_FIVEM;
+        else if (mx >= col1X + 15 && mx <= col1X + 15 + checkboxSize && my >= section2Y + 35 + 44 && my <= section2Y + 35 + 44 + checkboxSize) newHoverChk = IDC_CHK_VALORANT;
+        else if (mx >= col1X + 205 + 30 && mx <= col1X + 205 + 30 + checkboxSize && my >= section2Y + 35 && my <= section2Y + 35 + checkboxSize) newHoverChk = IDC_CHK_ANTICHEAT_TRACE;
+        // Unlink
+        else if (mx >= col3X + 15 && mx <= col3X + 15 + checkboxSize && my >= section2Y + 35 && my <= section2Y + 35 + checkboxSize) newHoverChk = IDC_CHK_UNLINK_XBOX;
+        else if (mx >= col3X + 15 && mx <= col3X + 15 + checkboxSize && my >= section2Y + 35 + 22 && my <= section2Y + 35 + 22 + checkboxSize) newHoverChk = IDC_CHK_UNLINK_DISCORD;
+        
+        if (newHoverChk != g_HoverCheckbox) {
+            g_HoverCheckbox = newHoverChk;
             InvalidateRect(hWnd, NULL, FALSE);
         }
 
@@ -709,9 +893,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
 
     case WM_MOUSELEAVE: {
-        if (g_HoverChange || g_HoverRevert) {
-            g_HoverChange = FALSE;
-            g_HoverRevert = FALSE;
+        if (g_HoverStartClean || g_HoverSpoofAll || g_HoverCheckbox != -1) {
+            g_HoverStartClean = FALSE;
+            g_HoverSpoofAll = FALSE;
+            g_HoverCheckbox = -1;
             InvalidateRect(hWnd, NULL, FALSE);
         }
         return 0;
@@ -1321,6 +1506,135 @@ void DoRevertHWID() {
     MessageBoxA(g_hWnd,
         "Hardware IDs reverted.\n\nA system reboot may be required to fully restore all IDs.",
         "Reverted", MB_ICONINFORMATION);
+}
+
+// ==================== TRACE CLEANER ====================
+
+void DoCleanTraces() {
+    // Ask user to select what to clean
+    int result = MessageBoxA(g_hWnd,
+        "This will clean system traces including:\n\n"
+        "- Event Logs (50+ channels)\n"
+        "- Registry Traces (UserAssist, Recent Docs, etc.)\n"
+        "- Prefetch Files\n"
+        "- Recent Items & Jump Lists\n"
+        "- Temp Files\n"
+        "- USN Journal\n"
+        "- Thumbnail Cache\n"
+        "- Shellbags\n"
+        "- Browser Traces\n"
+        "- Windows Error Reports\n"
+        "- Search Index\n"
+        "- Superfetch Data\n\n"
+        "This process is irreversible. Continue?",
+        "Clean System Traces", MB_YESNO | MB_ICONWARNING);
+    
+    if (result != IDYES) {
+        return;
+    }
+    
+    // Run the trace cleaner
+    CLEAN_STATS stats;
+    BOOL success = TraceClean_RunAll(&stats);
+    
+    // Format results
+    char statsMsg[1024];
+    TraceClean_GetStatsString(&stats, statsMsg, sizeof(statsMsg));
+    
+    char msgBuffer[2048];
+    _snprintf_s(msgBuffer, sizeof(msgBuffer), _TRUNCATE,
+                "%s\n\nTrace cleaning completed %s.",
+                statsMsg,
+                success ? "successfully" : "with errors (see log for details)");
+    
+    MessageBoxA(g_hWnd, msgBuffer, "Trace Cleaning Complete", 
+                success ? MB_ICONINFORMATION : MB_ICONWARNING);
+}
+
+// ==================== HEX GUI FUNCTIONS ====================
+
+void DoStartCleaning() {
+    // Build the trace cleaning flags based on selected checkboxes
+    DWORD categoryFlags = 0;
+    
+    // File Functions
+    if (g_ChkTempFiles) categoryFlags |= TRACE_TEMP_FILES;
+    if (g_ChkWinTemp) categoryFlags |= TRACE_TEMP_FILES;
+    if (g_ChkWinLogs) categoryFlags |= TRACE_EVENT_LOGS;
+    
+    // Browser Functions
+    if (g_ChkChromeCookies || g_ChkFirefoxCookies) categoryFlags |= TRACE_BROWSER;
+    
+    // WiFi functions - handled separately via ipconfig commands
+    if (g_ChkFlushDNS || g_ChkTCPReset || g_ChkWiFiReset) {
+        char cmdBuffer[512] = {0};
+        
+        if (g_ChkFlushDNS) {
+            strcat_s(cmdBuffer, sizeof(cmdBuffer), "ipconfig /flushdns && ");
+        }
+        if (g_ChkTCPReset) {
+            strcat_s(cmdBuffer, sizeof(cmdBuffer), "netsh int ip reset && ");
+        }
+        if (g_ChkWiFiReset) {
+            strcat_s(cmdBuffer, sizeof(cmdBuffer), "netsh winsock reset && ");
+        }
+        
+        // Remove trailing " && "
+        size_t len = strlen(cmdBuffer);
+        if (len > 4) {
+            cmdBuffer[len - 4] = '\0';
+            
+            // Execute network commands
+            STARTUPINFOA si = {sizeof(si)};
+            PROCESS_INFORMATION pi = {0};
+            CreateProcessA(NULL, cmdBuffer, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+            if (pi.hProcess) {
+                WaitForSingleObject(pi.hProcess, 5000);
+                CloseHandle(pi.hProcess);
+                CloseHandle(pi.hThread);
+            }
+        }
+    }
+    
+    // Run selected trace cleaning
+    if (categoryFlags != 0) {
+        CLEAN_STATS stats;
+        BOOL success = TraceClean_RunCategory(categoryFlags, &stats);
+        
+        char statsMsg[1024];
+        TraceClean_GetStatsString(&stats, statsMsg, sizeof(statsMsg));
+        
+        MessageBoxA(g_hWnd, statsMsg, "Cleaning Results", 
+                    success ? MB_ICONINFORMATION : MB_ICONWARNING);
+    } else {
+        MessageBoxA(g_hWnd, "No cleaning options selected.", "Notice", MB_ICONINFORMATION);
+    }
+}
+
+void DoSpoofAll() {
+    // Confirm before spoofing
+    int result = MessageBoxA(g_hWnd,
+        "This will spoof all hardware IDs:\n\n"
+        "- Disk Serial Number\n"
+        "- MAC Address\n"
+        "- BIOS Serial Number\n"
+        "- Motherboard Serial Number\n"
+        "- System UUID\n"
+        "- Volume Serial Number\n"
+        "- GPU ID\n\n"
+        "A system reboot may be required for full effect.\n\n"
+        "Continue?",
+        "Spoof All Hardware IDs", MB_YESNO | MB_ICONWARNING);
+    
+    if (result != IDYES) return;
+    
+    // Run the existing spoof function
+    DoSpoofHWID();
+    
+    MessageBoxA(g_hWnd,
+        "Hardware IDs have been spoofed successfully!\n\n"
+        "Note: Some changes may require a system reboot to take full effect.",
+        "Spoof Complete", MB_ICONINFORMATION);
 }
 
 // ==================== ANTI-DETECTION HELPERS ====================
