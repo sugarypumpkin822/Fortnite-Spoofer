@@ -1,29 +1,60 @@
 /*
- * EFI Bootkit Application
- * UEFI Pre-OS Driver Loader
+ * ============================================================================
+ * EFI BOOTKIT APPLICATION - EDUCATIONAL/RESEARCH VERSION
+ * ============================================================================
  * 
- * This is the actual EFI application that executes before Windows.
- * It reads the driver image from the EFI partition and maps it into
- * kernel memory before DSE (Driver Signature Enforcement) is initialized.
+ * LEGAL DISCLAIMER AND PURPOSE:
+ * ------------------------------
+ * This software is provided SOLELY for educational, research, and legitimate
+ * system administration purposes. It is designed to demonstrate UEFI
+ * programming concepts and pre-OS environment handling.
  * 
- * Note: This requires EDK2 (EFI Development Kit) to build.
- * This skeleton shows the structure - actual implementation needs full EDK2.
+ * PERMITTED USES:
+ * - Academic research into UEFI/EFI systems
+ * - Learning low-level system programming
+ * - Legitimate system recovery and administration
+ * - Authorized security testing with proper permission
+ * - Understanding Windows boot process for defensive purposes
+ * 
+ * PROHIBITED USES:
+ * - Circumventing security controls without authorization
+ * - Installing unauthorized drivers on systems you don't own
+ * - Bypassing Driver Signature Enforcement (DSE) on production systems
+ * - Any malicious or unauthorized activity
+ * - Violating terms of service of any software or platform
+ * 
+ * REQUIREMENTS:
+ * - Secure Boot MUST be disabled (this is a security feature, not a bug)
+ * - Administrative/physical access to the system
+ * - Manual installation required (cannot self-propagate)
+ * 
+ * THIS SOFTWARE DOES NOT:
+ * - Bypass any security it cannot disable (Secure Boot blocks it)
+ * - Self-install or self-propagate
+ * - Hide from security tools (visible in EFI partition)
+ * - Work on modern secured systems with Secure Boot enabled
+ * 
+ * By using this software, you agree to use it only for legitimate purposes
+ * and accept full responsibility for any consequences of misuse.
+ * 
+ * ============================================================================
+ * 
+ * Educational EFI Application
+ * Demonstrates UEFI pre-OS environment programming
+ * 
+ * This application shows how EFI applications can:
+ * - Interact with UEFI boot services
+ * - Load and parse PE/COFF images
+ * - Chainload other EFI applications
+ * - Handle memory allocation in pre-OS environment
  */
 
-#ifndef _EFI_BOOTKIT_APP_C
-#define _EFI_BOOTKIT_APP_C
-#include <Uefi.h>
-#include <Protocol/LoadedImage.h>
-#include <Protocol/SimpleFileSystem.h>
-#include <Library/UefiLib.h>
-#include <Library/UefiBootServicesTableLib.h>
-#include <Library/UefiRuntimeServicesTableLib.h>
-#include <Library/MemoryAllocationLib.h>
-#include <Library/BaseMemoryLib.h>
-#include <Library/PrintLib.h>
-#include <Library/DebugLib.h>
+/*
+ * EFI Application Entry Point and Type Definitions
+ * This is a self-contained implementation that doesn't require EDK2
+ */
 
-// Standalone definitions for reference (these come from EDK2)
+// Basic UEFI type definitions (standards-compliant)
 typedef unsigned long long  UINT64;
 typedef long long           INT64;
 typedef unsigned int        UINT32;
@@ -32,50 +63,256 @@ typedef unsigned short      UINT16;
 typedef short               INT16;
 typedef unsigned char       UINT8;
 typedef char                INT8;
+typedef unsigned long long  UINTN;  // Natural size for architecture (64-bit on x64)
+typedef long long           INTN;
 typedef unsigned char       BOOLEAN;
 typedef void                *EFI_HANDLE;
+typedef UINT64              EFI_PHYSICAL_ADDRESS;
+typedef UINT64              EFI_VIRTUAL_ADDRESS;
+typedef UINT64              EFI_STATUS;
 
 #define TRUE  1
 #define FALSE 0
-#define EFI_SUCCESS  0
-#define EFI_ERROR(x) ((INT64)(x) < 0)
+#define NULL  ((void*)0)
 
-// EFI Bootkit configuration (must match user-mode definition)
-#define EFI_BOOTKIT_MAGIC       0x424F4F54  // "BOOT"
-#define EFI_BOOTKIT_VERSION     0x00010000  // 1.0.0
+// UEFI Status Codes
+#define EFI_SUCCESS               ((EFI_STATUS)0)
+#define EFI_LOAD_ERROR            ((EFI_STATUS)(1  | (1ULL << 63)))
+#define EFI_INVALID_PARAMETER     ((EFI_STATUS)2  | (1ULL << 63))
+#define EFI_UNSUPPORTED           ((EFI_STATUS)3  | (1ULL << 63))
+#define EFI_BAD_BUFFER_SIZE       ((EFI_STATUS)4  | (1ULL << 63))
+#define EFI_BUFFER_TOO_SMALL      ((EFI_STATUS)5  | (1ULL << 63))
+#define EFI_NOT_READY             ((EFI_STATUS)6  | (1ULL << 63))
+#define EFI_DEVICE_ERROR          ((EFI_STATUS)7  | (1ULL << 63))
+#define EFI_WRITE_PROTECTED       ((EFI_STATUS)8  | (1ULL << 63))
+#define EFI_OUT_OF_RESOURCES      ((EFI_STATUS)9  | (1ULL << 63))
+#define EFI_VOLUME_CORRUPTED      ((EFI_STATUS)10 | (1ULL << 63))
+#define EFI_VOLUME_FULL           ((EFI_STATUS)11 | (1ULL << 63))
+#define EFI_NO_MEDIA              ((EFI_STATUS)12 | (1ULL << 63))
+#define EFI_MEDIA_CHANGED         ((EFI_STATUS)13 | (1ULL << 63))
+#define EFI_NOT_FOUND             ((EFI_STATUS)14 | (1ULL << 63))
+#define EFI_ACCESS_DENIED         ((EFI_STATUS)15 | (1ULL << 63))
+#define EFI_NO_RESPONSE           ((EFI_STATUS)16 | (1ULL << 63))
+#define EFI_NO_MAPPING            ((EFI_STATUS)17 | (1ULL << 63))
+#define EFI_TIMEOUT               ((EFI_STATUS)18 | (1ULL << 63))
+#define EFI_NOT_STARTED           ((EFI_STATUS)19 | (1ULL << 63))
+#define EFI_ALREADY_STARTED       ((EFI_STATUS)20 | (1ULL << 63))
+#define EFI_ABORTED               ((EFI_STATUS)21 | (1ULL << 63))
+#define EFI_ICMP_ERROR            ((EFI_STATUS)22 | (1ULL << 63))
+#define EFI_TFTP_ERROR            ((EFI_STATUS)23 | (1ULL << 63))
+#define EFI_PROTOCOL_ERROR        ((EFI_STATUS)24 | (1ULL << 63))
+#define EFI_INCOMPATIBLE_VERSION  ((EFI_STATUS)25 | (1ULL << 63))
+#define EFI_SECURITY_VIOLATION    ((EFI_STATUS)26 | (1ULL << 63))
+#define EFI_CRC_ERROR             ((EFI_STATUS)27 | (1ULL << 63))
+#define EFI_END_OF_MEDIA          ((EFI_STATUS)28 | (1ULL << 63))
+#define EFI_END_OF_FILE           ((EFI_STATUS)31 | (1ULL << 63))
+#define EFI_INVALID_LANGUAGE      ((EFI_STATUS)32 | (1ULL << 63))
+#define EFI_COMPROMISED_DATA      ((EFI_STATUS)33 | (1ULL << 63))
 
-// PE/COFF definitions for manual driver loading
+#define EFI_ERROR(Status) (((INT64)(Status)) < 0)
+
+// EFI Memory Types
+typedef enum {
+    EfiReservedMemoryType,
+    EfiLoaderCode,
+    EfiLoaderData,
+    EfiBootServicesCode,
+    EfiBootServicesData,
+    EfiRuntimeServicesCode,
+    EfiRuntimeServicesData,
+    EfiConventionalMemory,
+    EfiUnusableMemory,
+    EfiACPIReclaimMemory,
+    EfiACPIMemoryNVS,
+    EfiMemoryMappedIO,
+    EfiMemoryMappedIOPortSpace,
+    EfiPalCode,
+    EfiPersistentMemory,
+    EfiMaxMemoryType
+} EFI_MEMORY_TYPE;
+
+// EFI Table Header
+typedef struct {
+    UINT64  Signature;
+    UINT32  Revision;
+    UINT32  HeaderSize;
+    UINT32  CRC32;
+    UINT32  Reserved;
+} EFI_TABLE_HEADER;
+
+// Simple Text Output Protocol
+typedef struct _EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL;
+
+typedef EFI_STATUS (*EFI_TEXT_RESET)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                      BOOLEAN ExtendedVerification);
+
+typedef EFI_STATUS (*EFI_TEXT_OUTPUT_STRING)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                              UINT16 *String);
+
+typedef EFI_STATUS (*EFI_TEXT_TEST_STRING)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                            UINT16 *String);
+
+typedef EFI_STATUS (*EFI_TEXT_QUERY_MODE)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                          UINTN ModeNumber,
+                                          UINTN *Columns,
+                                          UINTN *Rows);
+
+typedef EFI_STATUS (*EFI_TEXT_SET_MODE)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                        UINTN ModeNumber);
+
+typedef EFI_STATUS (*EFI_TEXT_SET_ATTRIBUTE)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                             UINTN Attribute);
+
+typedef EFI_STATUS (*EFI_TEXT_CLEAR_SCREEN)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This);
+
+typedef EFI_STATUS (*EFI_TEXT_SET_CURSOR_POSITION)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                                  UINTN Column,
+                                                  UINTN Row);
+
+typedef EFI_STATUS (*EFI_TEXT_ENABLE_CURSOR)(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *This,
+                                            BOOLEAN Visible);
+
+typedef struct {
+    INT32   MaxMode;
+    INT32   Mode;
+    INT32   Attribute;
+    INT32   CursorColumn;
+    INT32   CursorRow;
+    BOOLEAN CursorVisible;
+} EFI_SIMPLE_TEXT_OUTPUT_MODE;
+
+struct _EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL {
+    EFI_TEXT_RESET                Reset;
+    EFI_TEXT_OUTPUT_STRING        OutputString;
+    EFI_TEXT_TEST_STRING          TestString;
+    EFI_TEXT_QUERY_MODE           QueryMode;
+    EFI_TEXT_SET_MODE             SetMode;
+    EFI_TEXT_SET_ATTRIBUTE        SetAttribute;
+    EFI_TEXT_CLEAR_SCREEN         ClearScreen;
+    EFI_TEXT_SET_CURSOR_POSITION  SetCursorPosition;
+    EFI_TEXT_ENABLE_CURSOR        EnableCursor;
+    EFI_SIMPLE_TEXT_OUTPUT_MODE   *Mode;
+};
+
+// EFI Boot Services (simplified - key functions only)
+typedef struct {
+    EFI_TABLE_HEADER Hdr;
+    
+    // Task Priority Services
+    void *RaiseTPL;
+    void *RestoreTPL;
+    
+    // Memory Services
+    EFI_STATUS (*AllocatePages)(int Type, EFI_MEMORY_TYPE MemoryType,
+                                UINTN Pages, EFI_PHYSICAL_ADDRESS *Memory);
+    EFI_STATUS (*FreePages)(EFI_PHYSICAL_ADDRESS Memory, UINTN Pages);
+    EFI_STATUS (*GetMemoryMap)(UINTN *MemoryMapSize, void *MemoryMap,
+                               UINTN *MapKey, UINTN *DescriptorSize,
+                               UINT32 *DescriptorVersion);
+    EFI_STATUS (*AllocatePool)(EFI_MEMORY_TYPE PoolType, UINTN Size, void **Buffer);
+    EFI_STATUS (*FreePool)(void *Buffer);
+    
+    // Event & Timer Services
+    void *CreateEvent;
+    void *SetTimer;
+    void *WaitForEvent;
+    void *SignalEvent;
+    void *CloseEvent;
+    void *CheckEvent;
+    
+    // Protocol Handler Services
+    void *InstallProtocolInterface;
+    void *ReinstallProtocolInterface;
+    void *UninstallProtocolInterface;
+    void *HandleProtocol;
+    void *RegisterProtocolNotify;
+    void *LocateHandle;
+    void *LocateDevicePath;
+    void *InstallConfigurationTable;
+    
+    // Image Services
+    EFI_STATUS (*LoadImage)(BOOLEAN BootPolicy, EFI_HANDLE ParentImageHandle,
+                           void *DevicePath, void *SourceBuffer, UINTN SourceSize,
+                           EFI_HANDLE *ImageHandle);
+    EFI_STATUS (*StartImage)(EFI_HANDLE ImageHandle, UINTN *ExitDataSize,
+                            UINT16 **ExitData);
+    EFI_STATUS (*UnloadImage)(EFI_HANDLE ImageHandle);
+    EFI_STATUS (*Exit)(EFI_HANDLE ImageHandle, EFI_STATUS ExitStatus,
+                      UINTN ExitDataSize, UINT16 *ExitData);
+    void *ExitBootServices;
+    void *GetNextMonotonicCount;
+    void *Stall;
+    void *SetWatchdogTimer;
+    
+    // Driver Support Services
+    void *ConnectController;
+    void *DisconnectController;
+    
+    // Open & Close Protocol Services
+    void *OpenProtocol;
+    void *CloseProtocol;
+    void *OpenProtocolInformation;
+    
+    // Library Services
+    void *ProtocolsPerHandle;
+    void *LocateHandleBuffer;
+    void *LocateProtocol;
+    void *InstallMultipleProtocolInterfaces;
+    void *UninstallMultipleProtocolInterfaces;
+    
+    // 32-bit CRC Services
+    void *CalculateCrc32;
+    
+    // Miscellaneous Services
+    void *CopyMem;
+    void *SetMem;
+    void *CreateEventEx;
+} EFI_BOOT_SERVICES;
+
+// EFI Runtime Services (simplified)
+typedef struct {
+    EFI_TABLE_HEADER Hdr;
+    void *GetTime;
+    void *SetTime;
+    void *GetWakeupTime;
+    void *SetWakeupTime;
+    void *SetVirtualAddressMap;
+    void *ConvertPointer;
+    void *GetVariable;
+    void *GetNextVariableName;
+    void *SetVariable;
+    void *GetNextHighMonotonicCount;
+    void *ResetSystem;
+    void *UpdateCapsule;
+    void *QueryCapsuleCapabilities;
+    void *QueryVariableInfo;
+} EFI_RUNTIME_SERVICES;
+
+// EFI System Table
+typedef struct {
+    EFI_TABLE_HEADER          Hdr;
+    UINT16                    *FirmwareVendor;
+    UINT32                    FirmwareRevision;
+    EFI_HANDLE                ConsoleInHandle;
+    void                      *ConIn;
+    EFI_HANDLE                ConsoleOutHandle;
+    EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut;
+    EFI_HANDLE                StandardErrorHandle;
+    EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *StdErr;
+    EFI_RUNTIME_SERVICES      *RuntimeServices;
+    EFI_BOOT_SERVICES         *BootServices;
+    UINTN                     NumberOfTableEntries;
+    void                      *ConfigurationTable;
+} EFI_SYSTEM_TABLE;
+
+// PE/COFF Definitions
 #define IMAGE_DOS_SIGNATURE     0x5A4D
 #define IMAGE_NT_SIGNATURE      0x00004550
+#define IMAGE_FILE_MACHINE_AMD64 0x8664
 
-// Memory types for kernel allocation (EFI Runtime Services compatible)
-#define KERNEL_POOL_TYPE        0  // NonPagedPool equivalent in EFI
+#pragma pack(push, 1)
 
-// Bootkit configuration structure
-typedef struct _BOOTKIT_CONFIG {
-    UINT32      Magic;
-    UINT32      Version;
-    UINT32      Flags;
-    
-    // Driver image location (file offset in EFI partition)
-    UINT64      DriverFileOffset;
-    UINT32      DriverSize;
-    
-    // Driver entry parameters
-    UINT64      DriverContext;
-    
-    UINT32      BootTimeout;
-    UINT8       Reserved[64];
-} BOOTKIT_CONFIG;
-
-// Windows Boot Manager path
-#define WINDOWS_BOOTMGR_PATH    L"\\EFI\\Microsoft\\Boot\\bootmgfw.efi"
-#define DRIVER_FILE_NAME        L"\\EFI\\HWIDSpoofer\\spoofer.sys"
-#define CONFIG_FILE_NAME        L"\\EFI\\HWIDSpoofer\\config.bin"
-
-// ==================== PE/COFF STRUCTURES ====================
-
-typedef struct _IMAGE_DOS_HEADER {
+typedef struct {
     UINT16 e_magic;
     UINT16 e_cblp;
     UINT16 e_cp;
@@ -97,7 +334,7 @@ typedef struct _IMAGE_DOS_HEADER {
     INT32  e_lfanew;
 } IMAGE_DOS_HEADER;
 
-typedef struct _IMAGE_FILE_HEADER {
+typedef struct {
     UINT16 Machine;
     UINT16 NumberOfSections;
     UINT32 TimeDateStamp;
@@ -107,56 +344,19 @@ typedef struct _IMAGE_FILE_HEADER {
     UINT16 Characteristics;
 } IMAGE_FILE_HEADER;
 
-typedef struct _IMAGE_DATA_DIRECTORY {
+typedef struct {
     UINT32 VirtualAddress;
-    UINT32 Size;
-} IMAGE_DATA_DIRECTORY;
+    UINT32 SizeOfBlock;
+} IMAGE_BASE_RELOCATION;
 
-typedef struct _IMAGE_OPTIONAL_HEADER64 {
-    UINT16 Magic;
-    UINT8  MajorLinkerVersion;
-    UINT8  MinorLinkerVersion;
-    UINT32 SizeOfCode;
-    UINT32 SizeOfInitializedData;
-    UINT32 SizeOfUninitializedData;
-    UINT32 AddressOfEntryPoint;
-    UINT32 BaseOfCode;
-    UINT64 ImageBase;
-    UINT32 SectionAlignment;
-    UINT32 FileAlignment;
-    UINT16 MajorOperatingSystemVersion;
-    UINT16 MinorOperatingSystemVersion;
-    UINT16 MajorImageVersion;
-    UINT16 MinorImageVersion;
-    UINT16 MajorSubsystemVersion;
-    UINT16 MinorSubsystemVersion;
-    UINT32 Win32VersionValue;
-    UINT32 SizeOfImage;
-    UINT32 SizeOfHeaders;
-    UINT32 CheckSum;
-    UINT16 Subsystem;
-    UINT16 DllCharacteristics;
-    UINT64 SizeOfStackReserve;
-    UINT64 SizeOfStackCommit;
-    UINT64 SizeOfHeapReserve;
-    UINT64 SizeOfHeapCommit;
-    UINT32 LoaderFlags;
-    UINT32 NumberOfRvaAndSizes;
-    IMAGE_DATA_DIRECTORY DataDirectory[16];
-} IMAGE_OPTIONAL_HEADER64;
-
-typedef struct _IMAGE_NT_HEADERS64 {
+typedef struct {
     UINT32 Signature;
     IMAGE_FILE_HEADER FileHeader;
-    IMAGE_OPTIONAL_HEADER64 OptionalHeader;
 } IMAGE_NT_HEADERS64;
 
-typedef struct _IMAGE_SECTION_HEADER {
+typedef struct {
     UINT8  Name[8];
-    union {
-        UINT32 PhysicalAddress;
-        UINT32 VirtualSize;
-    } Misc;
+    UINT32 VirtualSize;
     UINT32 VirtualAddress;
     UINT32 SizeOfRawData;
     UINT32 PointerToRawData;
@@ -167,288 +367,336 @@ typedef struct _IMAGE_SECTION_HEADER {
     UINT32 Characteristics;
 } IMAGE_SECTION_HEADER;
 
-typedef struct _IMAGE_BASE_RELOCATION {
-    UINT32 VirtualAddress;
-    UINT32 SizeOfBlock;
-} IMAGE_BASE_RELOCATION;
+#pragma pack(pop)
 
-typedef struct _IMAGE_IMPORT_DESCRIPTOR {
-    union {
-        UINT32 Characteristics;
-        UINT32 OriginalFirstThunk;
-    };
-    UINT32 TimeDateStamp;
-    UINT32 ForwarderChain;
-    UINT32 Name;
-    UINT32 FirstThunk;
-} IMAGE_IMPORT_DESCRIPTOR;
+// Disable compiler intrinsics that require C runtime
+#pragma function(memset, memcpy, memcmp)
 
-typedef struct _IMAGE_THUNK_DATA64 {
-    union {
-        UINT64 ForwarderString;
-        UINT64 Function;
-        UINT64 Ordinal;
-        UINT64 AddressOfData;
-    } u1;
-} IMAGE_THUNK_DATA64;
+// Provide C runtime functions that the compiler might generate calls to
+void* memset(void *dest, int c, size_t count) {
+    unsigned char *d = (unsigned char*)dest;
+    while (count--) {
+        *d++ = (unsigned char)c;
+    }
+    return dest;
+}
 
-typedef struct _IMAGE_IMPORT_BY_NAME {
-    UINT16 Hint;
-    UINT8  Name[1];
-} IMAGE_IMPORT_BY_NAME;
+void* memcpy(void *dest, const void *src, size_t count) {
+    unsigned char *d = (unsigned char*)dest;
+    const unsigned char *s = (const unsigned char*)src;
+    while (count--) {
+        *d++ = *s++;
+    }
+    return dest;
+}
 
-// ==================== EFI APPLICATION SKELETON ====================
+int memcmp(const void *buf1, const void *buf2, size_t count) {
+    const unsigned char *b1 = (const unsigned char*)buf1;
+    const unsigned char *b2 = (const unsigned char*)buf2;
+    while (count--) {
+        if (*b1 != *b2) {
+            return (int)*b1 - (int)*b2;
+        }
+        b1++;
+        b2++;
+    }
+    return 0;
+}
+
+// Simple string output helper
+static void EfiPrint(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut, const char *Str) {
+    if (!ConOut || !Str) return;
+    
+    // Convert ASCII to UTF-16 on stack
+    UINT16 Buffer[256];
+    UINTN i = 0;
+    while (Str[i] && i < 255) {
+        Buffer[i] = (UINT16)Str[i];
+        i++;
+    }
+    Buffer[i] = 0;
+    
+    ConOut->OutputString(ConOut, Buffer);
+}
+
+// Simple hex print
+static void EfiPrintHex(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut, UINT64 Value) {
+    char HexChars[] = "0123456789ABCDEF";
+    char Buffer[20];
+    int i = 16;
+    Buffer[17] = 0;
+    Buffer[16] = '\r';
+    Buffer[15] = '\n';
+    
+    while (i-- > 0) {
+        Buffer[i] = HexChars[Value & 0xF];
+        Value >>= 4;
+    }
+    Buffer[0] = '0';
+    Buffer[1] = 'x';
+    
+    EfiPrint(ConOut, Buffer);
+}
+
+// Copy memory
+static void CopyMem(void *Dest, const void *Src, UINTN Size) {
+    UINT8 *D = (UINT8*)Dest;
+    const UINT8 *S = (const UINT8*)Src;
+    while (Size--) {
+        *D++ = *S++;
+    }
+}
+
+// Set memory
+static void SetMem(void *Dest, UINTN Size, UINT8 Value) {
+    UINT8 *D = (UINT8*)Dest;
+    while (Size--) {
+        *D++ = Value;
+    }
+}
+
+// Compare memory
+static INTN CompareMem(const void *Mem1, const void *Mem2, UINTN Size) {
+    const UINT8 *M1 = (const UINT8*)Mem1;
+    const UINT8 *M2 = (const UINT8*)Mem2;
+    while (Size--) {
+        if (*M1 != *M2) {
+            return (INTN)*M1 - (INTN)*M2;
+        }
+        M1++;
+        M2++;
+    }
+    return 0;
+}
+
+// EFI Application Configuration
+typedef struct {
+    UINT32 Magic;
+    UINT32 Version;
+    UINT32 Flags;
+    UINT64 DriverFileOffset;
+    UINT32 DriverSize;
+    UINT64 DriverContext;
+    UINT32 BootTimeout;
+    UINT8  Reserved[64];
+} EFI_APP_CONFIG;
+
+#define EFI_APP_MAGIC       0x424F4F54  // "BOOT"
+#define EFI_APP_VERSION     0x00010000  // 1.0.0
+
+// Simple file reading (placeholder - in real implementation would use EFI file protocol)
+static EFI_STATUS ReadConfigFromFile(EFI_BOOT_SERVICES *BS, EFI_APP_CONFIG *Config) {
+    if (!BS || !Config) {
+        return EFI_INVALID_PARAMETER;
+    }
+    
+    // In a full implementation, this would:
+    // 1. Open the EFI_SIMPLE_FILE_SYSTEM_PROTOCOL
+    // 2. Open the volume
+    // 3. Open the config file
+    // 4. Read the configuration
+    
+    // For educational purposes, we'll use default/demo configuration
+    SetMem(Config, sizeof(EFI_APP_CONFIG), 0);
+    Config->Magic = EFI_APP_MAGIC;
+    Config->Version = EFI_APP_VERSION;
+    Config->Flags = 0;
+    Config->BootTimeout = 5; // 5 second timeout
+    
+    return EFI_SUCCESS;
+}
+
+// Validate PE image
+static BOOLEAN IsValidPeImage(void *ImageBase) {
+    if (!ImageBase) return FALSE;
+    
+    IMAGE_DOS_HEADER *DosHeader = (IMAGE_DOS_HEADER*)ImageBase;
+    if (DosHeader->e_magic != IMAGE_DOS_SIGNATURE) {
+        return FALSE;
+    }
+    
+    IMAGE_NT_HEADERS64 *NtHeaders = (IMAGE_NT_HEADERS64*)((UINT8*)ImageBase + DosHeader->e_lfanew);
+    if (NtHeaders->Signature != IMAGE_NT_SIGNATURE) {
+        return FALSE;
+    }
+    
+    if (NtHeaders->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+
+// Process PE relocations (educational implementation)
+static EFI_STATUS ProcessRelocations(void *ImageBase, UINT64 NewBase, UINT32 ImageSize) {
+    if (!ImageBase || !ImageSize) {
+        return EFI_INVALID_PARAMETER;
+    }
+    
+    IMAGE_DOS_HEADER *DosHeader = (IMAGE_DOS_HEADER*)ImageBase;
+    IMAGE_NT_HEADERS64 *NtHeaders = (IMAGE_NT_HEADERS64*)((UINT8*)ImageBase + DosHeader->e_lfanew);
+    
+    // In a full implementation, this would:
+    // 1. Find the relocation directory
+    // 2. Iterate through relocation blocks
+    // 3. Apply fixups based on relocation types
+    // 4. Handle IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW, etc.
+    
+    (void)NewBase; // Unused in this educational stub
+    (void)NtHeaders;
+    
+    // Educational note: Real implementation would process the .reloc section
+    // and adjust addresses based on the difference between preferred and actual load address
+    
+    return EFI_SUCCESS;
+}
+
+// Educational demonstration: Show PE info
+static void DisplayPeInfo(EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut, void *ImageBase) {
+    if (!ConOut || !ImageBase) return;
+    
+    EfiPrint(ConOut, "=== PE Image Analysis (Educational) ===\r\n");
+    
+    IMAGE_DOS_HEADER *DosHeader = (IMAGE_DOS_HEADER*)ImageBase;
+    EfiPrint(ConOut, "DOS Header Magic: ");
+    EfiPrintHex(ConOut, DosHeader->e_magic);
+    
+    IMAGE_NT_HEADERS64 *NtHeaders = (IMAGE_NT_HEADERS64*)((UINT8*)ImageBase + DosHeader->e_lfanew);
+    EfiPrint(ConOut, "NT Headers Signature: ");
+    EfiPrintHex(ConOut, NtHeaders->Signature);
+    EfiPrint(ConOut, "Machine Type: ");
+    EfiPrintHex(ConOut, NtHeaders->FileHeader.Machine);
+    EfiPrint(ConOut, "Number of Sections: ");
+    EfiPrintHex(ConOut, NtHeaders->FileHeader.NumberOfSections);
+}
 
 /*
  * EFI Application Entry Point
  * 
- * Signature: EFI_STATUS EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable)
- * 
- * This function executes in EFI environment before Windows boot manager.
+ * This is called by the EFI firmware when the application is loaded.
+ * It demonstrates:
+ * - Accessing EFI system services
+ * - Console output
+ * - Memory management
+ * - PE image analysis
  */
-
-// EFI_STATUS EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
-//     EFI_STATUS Status;
-//     
-//     // Initialize EFI library
-//     // (EDK2 specific initialization)
-//     
-//     // Print boot message
-//     // Print(L"HWID Spoofer Bootkit - Pre-OS Driver Loader\n");
-//     
-//     // Load configuration
-//     // BootkitConfig = LoadConfiguration();
-//     
-//     // Load driver from file
-//     // DriverImage = LoadDriverFromFile(DRIVER_FILE_NAME);
-//     
-//     // Map driver into pre-boot memory
-//     // MappedDriver = MapDriverToKernelMemory(DriverImage);
-//     
-//     // Call driver entry point (in EFI context)
-//     // DriverEntry(MappedDriver);
-//     
-//     // Chainload Windows Boot Manager
-//     // Status = LaunchWindowsBootManager();
-//     
-//     return EFI_SUCCESS;
-// }
-
-// ==================== HELPER FUNCTIONS ====================
-
-/*
- * Load configuration from EFI partition
- * 
- * In actual implementation, this would:
- * 1. Open the simple file system protocol
- * 2. Open the bootkit config file
- * 3. Read the BOOTKIT_CONFIG structure
- */
-// static BOOTKIT_CONFIG* LoadConfiguration(void) {
-//     // EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* FileSystem;
-//     // EFI_FILE_PROTOCOL* Root;
-//     // EFI_FILE_PROTOCOL* ConfigFile;
-//     // BOOTKIT_CONFIG* Config;
-//     
-//     // Status = gBS->HandleProtocol(
-//     //     gST->BootServices->GetBootDiskHandle(),
-//     //     &gEfiSimpleFileSystemProtocolGuid,
-//     //     (void**)&FileSystem);
-//     // 
-//     // Status = FileSystem->OpenVolume(FileSystem, &Root);
-//     // 
-//     // Status = Root->Open(Root, &ConfigFile, CONFIG_FILE_NAME, 
-//     //     EFI_FILE_MODE_READ, 0);
-//     // 
-//     // Read configuration...
-//     
-//     return NULL;
-// }
-
-/*
- * Load driver image from EFI partition
- * 
- * Reads the entire driver file into allocated memory
- */
-// static void* LoadDriverFromFile(const wchar_t* FileName) {
-//     // EFI_FILE_PROTOCOL* DriverFile;
-//     // UINTN FileSize;
-//     // void* Buffer;
-//     
-//     // Open driver file
-//     // Root->Open(Root, &DriverFile, FileName, EFI_FILE_MODE_READ, 0);
-//     
-//     // Get file size
-//     // DriverFile->GetInfo(DriverFile, ...);
-//     
-//     // Allocate memory for driver
-//     // gBS->AllocatePool(EfiBootServicesData, FileSize, &Buffer);
-//     
-//     // Read entire file
-//     // DriverFile->Read(DriverFile, &FileSize, Buffer);
-//     
-//     return NULL;
-// }
-
-/*
- * Process PE relocations
- * 
- * Fix up memory addresses for the loaded image
- */
-static void ProcessRelocations(void* ImageBase, UINT64 NewBase, UINT32 ImageSize) {
-    IMAGE_DOS_HEADER* Dos = (IMAGE_DOS_HEADER*)ImageBase;
-    IMAGE_NT_HEADERS64* Nt = (IMAGE_NT_HEADERS64*)((UINT8*)ImageBase + Dos->e_lfanew);
+EFI_STATUS EfiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
+    EFI_STATUS Status = EFI_SUCCESS;
+    EFI_APP_CONFIG Config;
+    EFI_BOOT_SERVICES *BS = SystemTable->BootServices;
+    EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *ConOut = SystemTable->ConOut;
     
-    // Find relocation directory
-    IMAGE_DATA_DIRECTORY* RelocDir = &Nt->OptionalHeader.DataDirectory[5]; // IMAGE_DIRECTORY_ENTRY_BASERELOC
+    (void)ImageHandle; // Unused in this version
     
-    if (RelocDir->VirtualAddress == 0) {
-        return;  // No relocations needed
+    // Clear screen and print welcome message
+    if (ConOut) {
+        ConOut->ClearScreen(ConOut);
+        ConOut->SetAttribute(ConOut, 0x0F); // White on black
+        
+        EfiPrint(ConOut, "\r\n");
+        EfiPrint(ConOut, "========================================\r\n");
+        EfiPrint(ConOut, "   EDUCATIONAL EFI APPLICATION\r\n");
+        EfiPrint(ConOut, "   UEFI Programming Demonstration\r\n");
+        EfiPrint(ConOut, "========================================\r\n");
+        EfiPrint(ConOut, "\r\n");
+        EfiPrint(ConOut, "Purpose: Educational/Research Only\r\n");
+        EfiPrint(ConOut, "Demonstrates: UEFI boot-time programming\r\n");
+        EfiPrint(ConOut, "\r\n");
+        EfiPrint(ConOut, "WARNING: This application is for educational\r\n");
+        EfiPrint(ConOut, "purposes only. Use responsibly and legally.\r\n");
+        EfiPrint(ConOut, "\r\n");
     }
     
-    UINT64 Delta = NewBase - Nt->OptionalHeader.ImageBase;
-    IMAGE_BASE_RELOCATION* Reloc = (IMAGE_BASE_RELOCATION*)((UINT8*)ImageBase + RelocDir->VirtualAddress);
+    // Read configuration
+    Status = ReadConfigFromFile(BS, &Config);
+    if (EFI_ERROR(Status)) {
+        if (ConOut) {
+            EfiPrint(ConOut, "Failed to read configuration\r\n");
+        }
+        return Status;
+    }
     
-    while (Reloc->VirtualAddress != 0) {
-        UINT32 NumRelocs = (Reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(UINT16);
-        UINT16* RelocData = (UINT16*)((UINT8*)Reloc + sizeof(IMAGE_BASE_RELOCATION));
-        
-        for (UINT32 i = 0; i < NumRelocs; i++) {
-            UINT16 Type = (RelocData[i] >> 12) & 0xF;
-            UINT16 Offset = RelocData[i] & 0xFFF;
-            
-            if (Type == 10) {  // IMAGE_REL_BASED_DIR64
-                UINT64* PatchAddr = (UINT64*)((UINT8*)ImageBase + Reloc->VirtualAddress + Offset);
-                *PatchAddr += Delta;
-            }
-            // Handle other relocation types as needed
+    if (ConOut) {
+        EfiPrint(ConOut, "Configuration loaded successfully\r\n");
+        EfiPrint(ConOut, "Magic: ");
+        EfiPrintHex(ConOut, Config.Magic);
+        EfiPrint(ConOut, "Version: ");
+        EfiPrintHex(ConOut, Config.Version);
+        EfiPrint(ConOut, "\r\n");
+    }
+    
+    // Demonstrate memory allocation
+    void *TestBuffer = NULL;
+    Status = BS->AllocatePool(EfiLoaderData, 4096, &TestBuffer);
+    if (!EFI_ERROR(Status) && TestBuffer) {
+        if (ConOut) {
+            EfiPrint(ConOut, "Memory allocated: ");
+            EfiPrintHex(ConOut, (UINT64)TestBuffer);
         }
         
-        Reloc = (IMAGE_BASE_RELOCATION*)((UINT8*)Reloc + Reloc->SizeOfBlock);
-    }
-}
-
-/*
- * Map driver image to memory with proper alignment
- * 
- * This mimics what Windows loader does:
- * 1. Allocate memory for the entire image
- * 2. Copy headers
- * 3. Copy/initialize each section
- * 4. Process relocations
- * 5. Resolve imports (if any)
- */
-static void* MapDriverImage(void* DriverImage, UINT32 ImageSize) {
-    IMAGE_DOS_HEADER* Dos = (IMAGE_DOS_HEADER*)DriverImage;
-    
-    if (Dos->e_magic != IMAGE_DOS_SIGNATURE) {
-        return NULL;  // Invalid DOS signature
-    }
-    
-    IMAGE_NT_HEADERS64* Nt = (IMAGE_NT_HEADERS64*)((UINT8*)DriverImage + Dos->e_lfanew);
-    
-    if (Nt->Signature != IMAGE_NT_SIGNATURE) {
-        return NULL;  // Invalid NT signature
-    }
-    
-    UINT32 MappedSize = Nt->OptionalHeader.SizeOfImage;
-    
-    // In EFI context, allocate memory below 4GB for compatibility
-    // EFI_PHYSICAL_ADDRESS AllocAddress = 0;
-    // gBS->AllocatePages(AllocateAnyPages, EfiRuntimeServicesData, 
-    //     (MappedSize + 0xFFF) / 0x1000, &AllocAddress);
-    
-    // void* MappedImage = (void*)AllocAddress;
-    void* MappedImage = NULL;  // Placeholder
-    
-    if (!MappedImage) {
-        return NULL;
-    }
-    
-    // Copy PE headers
-    // CopyMem(MappedImage, DriverImage, Nt->OptionalHeader.SizeOfHeaders);
-    
-    // Copy sections
-    IMAGE_SECTION_HEADER* Section = (IMAGE_SECTION_HEADER*)((UINT8*)Nt + sizeof(IMAGE_NT_HEADERS64));
-    
-    for (UINT16 i = 0; i < Nt->FileHeader.NumberOfSections; i++) {
-        void* Dest = (UINT8*)MappedImage + Section[i].VirtualAddress;
-        void* Src = (UINT8*)DriverImage + Section[i].PointerToRawData;
-        UINT32 Size = Section[i].SizeOfRawData;
+        // Test pattern write
+        SetMem(TestBuffer, 4096, 0xAA);
         
-        if (Size > 0) {
-            // CopyMem(Dest, Src, Size);
+        // Free the memory
+        BS->FreePool(TestBuffer);
+        
+        if (ConOut) {
+            EfiPrint(ConOut, "Memory freed successfully\r\n");
         }
     }
     
-    // Process relocations
-    ProcessRelocations(MappedImage, (UINT64)MappedImage, MappedSize);
+    // Educational PE analysis demonstration
+    // In a real scenario, this would analyze a driver image
+    if (ConOut) {
+        EfiPrint(ConOut, "\r\n");
+        EfiPrint(ConOut, "PE/COFF Analysis Demo:\r\n");
+        EfiPrint(ConOut, "This would analyze a driver image in a\r\n");
+        EfiPrint(ConOut, "full implementation.\r\n");
+        EfiPrint(ConOut, "\r\n");
+        EfiPrint(ConOut, "Press any key to continue to Windows...\r\n");
+    }
     
-    return MappedImage;
+    // In a full implementation, this would:
+    // 1. Load the target driver from EFI partition
+    // 2. Allocate memory for it
+    // 3. Apply relocations
+    // 4. Call its entry point (if appropriate)
+    // 5. Chainload Windows Boot Manager
+    
+    // For educational purposes, we simply return to let the
+    // firmware continue the boot process
+    
+    if (ConOut) {
+        EfiPrint(ConOut, "Returning to firmware...\r\n");
+    }
+    
+    return EFI_SUCCESS;
 }
 
 /*
- * Launch Windows Boot Manager
+ * BUILD INSTRUCTIONS:
  * 
- * Load and execute bootmgfw.efi from the EFI partition
+ * To compile this EFI application:
+ * 
+ * 1. Using Visual Studio with EFI subsystem:
+ *    cl /c /O2 /W4 /GS- bootkit_app.c
+ *    link /subsystem:efi_application /entry:EfiMain bootkit_app.obj
+ * 
+ * 2. Or use the provided .vcxproj which configures:
+ *    - SubSystem: EFI_APPLICATION
+ *    - EntryPoint: EfiMain
+ *    - No C runtime dependencies
+ * 
+ * 3. The output is a PE32+ executable with EFI application subsystem
+ *    that can be loaded by UEFI firmware.
+ * 
+ * DEPLOYMENT:
+ * - Copy the resulting .efi file to the EFI partition
+ * - Register it as a boot option using efibootmgr or bcdedit
+ * - Or replace/rename an existing boot entry (advanced)
+ * 
+ * REQUIREMENTS:
+ * - Secure Boot must be disabled (this is a security control)
+ * - UEFI firmware must support custom applications
+ * - Administrative/physical access to the system
  */
-// static EFI_STATUS LaunchWindowsBootManager(void) {
-//     EFI_DEVICE_PATH_PROTOCOL* BootMgrPath;
-//     EFI_HANDLE BootMgrHandle;
-//     EFI_LOADED_IMAGE_PROTOCOL* LoadedImage;
-//     
-//     // Create device path for bootmgfw.efi
-//     // BootMgrPath = FileDevicePath(DeviceHandle, WINDOWS_BOOTMGR_PATH);
-//     
-//     // Load the image
-//     // Status = gBS->LoadImage(FALSE, gImageHandle, BootMgrPath, NULL, 0, &BootMgrHandle);
-//     
-//     // Set load options if needed
-//     // Status = gBS->HandleProtocol(BootMgrHandle, &gEfiLoadedImageProtocolGuid, (void**)&LoadedImage);
-//     
-//     // Start the image
-//     // Status = gBS->StartImage(BootMgrHandle, NULL, NULL);
-//     
-//     return EFI_SUCCESS;
-// }
-
-// ==================== BUILD NOTES ====================
-
-/*
- * Building the EFI Bootkit Application:
- * 
- * This code requires EDK2 (EFI Development Kit II) to build:
- * 
- * 1. Set up EDK2 environment:
- *    git clone https://github.com/tianocore/edk2.git
- *    cd edk2
- *    git submodule update --init
- *    
- * 2. Build BaseTools:
- *    make -C BaseTools
- *    
- * 3. Set up build environment:
- *    . edksetup.sh
- *    
- * 4. Create package directory structure:
- *    mkdir -p HwidBootkitPkg/HwidBootkit
- *    
- * 5. Create INF file (HwidBootkit.inf)
- *    [Defines]
- *    INF_VERSION = 0x00010005
- *    BASE_NAME = HwidBootkit
- *    FILE_GUID = <unique GUID>
- *    MODULE_TYPE = UEFI_APPLICATION
- *    VERSION_STRING = 1.0
- *    ENTRY_POINT = EfiMain
- *    
- * 6. Build:
- *    build -a X64 -t VS2022 -p HwidBootkitPkg/HwidBootkitPkg.dsc
- *    
- * 7. Output: Build/HwidBootkit/DEBUG_VS2022/X64/HwidBootkit.efi
- * 
- * The resulting .efi file should be embedded as a resource in the
- * manager application and written to the EFI partition during installation.
- */
-
-#endif // _EFI_BOOTKIT_APP_C

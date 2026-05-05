@@ -78,12 +78,54 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="manager.c" />
+    <!-- Entry Point -->
+    <ClCompile Include="main.c" />
+    <ClCompile Include="globals.c" />
+    <!-- Core Modules -->
+    <ClCompile Include="Core\core_spoof.c" />
+    <ClCompile Include="Driver\driver_mapper.c" />
+    <ClCompile Include="GUI\gui_window.c" />
+    <ClCompile Include="HWID\hwid_reader.c" />
+    <ClCompile Include="Utils\utils_common.c" />
+    <!-- Trace Cleaners -->
     <ClCompile Include="trace_cleaner.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Main Headers -->
+    <ClInclude Include="manager.h" />
+    <ClInclude Include="resource.h" />
+    <!-- Core Module Headers -->
+    <ClInclude Include="Core\core_spoof.h" />
+    <ClInclude Include="Driver\driver_mapper.h" />
+    <ClInclude Include="HWID\hwid_reader.h" />
+    <ClInclude Include="Utils\utils_common.h" />
+    <!-- GUI Headers -->
+    <ClInclude Include="GUI\gui_colors.h" />
+    <ClInclude Include="GUI\gui_draw.h" />
+    <ClInclude Include="GUI\gui_ids.h" />
+    <ClInclude Include="GUI\gui_main.h" />
+    <!-- Trace Cleaner Headers -->
+    <ClInclude Include="trace_cleaner.h" />
+    <ClInclude Include="trace_cleaners\tc_api.h" />
+    <ClInclude Include="trace_cleaners\tc_browser.h" />
+    <ClInclude Include="trace_cleaners\tc_clipboard.h" />
+    <ClInclude Include="trace_cleaners\tc_common.h" />
+    <ClInclude Include="trace_cleaners\tc_eventlogs.h" />
+    <ClInclude Include="trace_cleaners\tc_filesystem.h" />
+    <ClInclude Include="trace_cleaners\tc_network.h" />
+    <ClInclude Include="trace_cleaners\tc_registry.h" />
+    <ClInclude Include="trace_cleaners\tc_search.h" />
+    <ClInclude Include="trace_cleaners\tc_usn.h" />
+    <ClInclude Include="trace_cleaners\tc_wer.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="manager.rc" />
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ProjectDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

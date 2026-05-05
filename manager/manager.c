@@ -38,7 +38,7 @@
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
-// ==================== KDMAPPER CONFIGURATION ====================
+// ==================== KDMAPPER CONFIGURATION ====================//
 
 #define IOCTL_NAL_MAP      0x80862007
 
@@ -110,36 +110,36 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 // ==================== GLOBALS ====================
 
-static HINSTANCE g_hInst;
-static HWND g_hWnd;
-static HWND g_hBtnChange, g_hBtnRevert, g_hComboDuration, g_hBtnRefresh, g_hBtnCleanTraces;
-static HFONT g_hFontTitle, g_hFontNormal, g_hFontSmall, g_hFontBold, g_hFontMono;
-static HBRUSH g_hBrBg, g_hBrPanel, g_hBrBorder;
+HINSTANCE g_hInst;
+HWND g_hWnd;
+HWND g_hBtnChange, g_hBtnRevert, g_hComboDuration, g_hBtnRefresh, g_hBtnCleanTraces;
+HFONT g_hFontTitle, g_hFontNormal, g_hFontSmall, g_hFontBold, g_hFontMono;
+HBRUSH g_hBrBg, g_hBrPanel, g_hBrBorder;
 
-static BOOL g_SpooferLoaded = FALSE;
-static CHAR g_OriginalDiskSerial[256] = "(unknown)";
-static UCHAR g_OriginalMAC[6] = {0};
-static BOOL g_OriginalMACValid = FALSE;
-static CHAR g_CurrentDiskSerial[256] = "(unknown)";
-static UCHAR g_CurrentMAC[6] = {0};
-static BOOL g_CurrentMACValid = FALSE;
+BOOL g_SpooferLoaded = FALSE;
+CHAR g_OriginalDiskSerial[256] = "(unknown)";
+UCHAR g_OriginalMAC[6] = {0};
+BOOL g_OriginalMACValid = FALSE;
+CHAR g_CurrentDiskSerial[256] = "(unknown)";
+UCHAR g_CurrentMAC[6] = {0};
+BOOL g_CurrentMACValid = FALSE;
 
-static CHAR g_OrigBIOSSerial[256] = "(unknown)";
-static CHAR g_OrigBoardSerial[256] = "(unknown)";
-static CHAR g_OrigSystemUUID[256] = "(unknown)";
-static ULONG g_OrigVolumeSerial = 0;
-static BOOL g_OrigVolumeSerialValid = FALSE;
-static CHAR g_OrigGPUID[256] = "(unknown)";
+CHAR g_OrigBIOSSerial[256] = "(unknown)";
+CHAR g_OrigBoardSerial[256] = "(unknown)";
+CHAR g_OrigSystemUUID[256] = "(unknown)";
+ULONG g_OrigVolumeSerial = 0;
+BOOL g_OrigVolumeSerialValid = FALSE;
+CHAR g_OrigGPUID[256] = "(unknown)";
 
-static CHAR g_CurrBIOSSerial[256] = "(unknown)";
-static CHAR g_CurrBoardSerial[256] = "(unknown)";
-static CHAR g_CurrSystemUUID[256] = "(unknown)";
-static ULONG g_CurrVolumeSerial = 0;
-static BOOL g_CurrVolumeSerialValid = FALSE;
-static CHAR g_CurrGPUID[256] = "(unknown)";
+CHAR g_CurrBIOSSerial[256] = "(unknown)";
+CHAR g_CurrBoardSerial[256] = "(unknown)";
+CHAR g_CurrSystemUUID[256] = "(unknown)";
+ULONG g_CurrVolumeSerial = 0;
+BOOL g_CurrVolumeSerialValid = FALSE;
+CHAR g_CurrGPUID[256] = "(unknown)";
 
-static CHAR g_StatusText[256] = "INACTIVE";
-static COLORREF g_StatusColor = CLR_RED;
+CHAR g_StatusText[256] = "INACTIVE";
+COLORREF g_StatusColor = CLR_RED;
 
 // Extended ID tracking (from driver log)
 #pragma pack(push, 1)
@@ -167,15 +167,15 @@ typedef struct {
 } HWID_LOG;
 #pragma pack(pop)
 
-static HWID_LOG g_HwidLog = {0};
-static BOOL g_LogLoaded = FALSE;
+HWID_LOG g_HwidLog = {0};
+BOOL g_LogLoaded = FALSE;
 
-static CHAR g_TempDir[MAX_PATH] = {0};
-static CHAR g_VulnDriverPath[MAX_PATH] = {0};
-static CHAR g_VulnServiceName[32] = {0};
-static CHAR g_VulnDeviceName[64] = {0};
+CHAR g_TempDir[MAX_PATH] = {0};
+CHAR g_VulnDriverPath[MAX_PATH] = {0};
+CHAR g_VulnServiceName[32] = {0};
+CHAR g_VulnDeviceName[64] = {0};
 
-static char g_LastMapFail[512];
+char g_LastMapFail[512];
 
 static void SetLastMapFailV(const char* fmt, ...) {
     va_list ap;
@@ -249,41 +249,41 @@ typedef struct {
     SYSTEM_MODULE Modules[1];
 } SYSTEM_MODULE_INFO;
 
-static HANDLE g_hVulnDriver = INVALID_HANDLE_VALUE;
-static PVOID g_KernelBase = NULL;
+HANDLE g_hVulnDriver = INVALID_HANDLE_VALUE;
+PVOID g_KernelBase = NULL;
 
 typedef NTSTATUS(NTAPI* pNtQueryIntervalProfile)(ULONG ProfileSource, PULONG Interval);
 
-static ULONGLONG g_SpoofExpiry = 0;   // 0 = no expiry (until reboot)
-static int g_SelectedDuration = DUR_UNTIL_REBOOT;
-static CHAR g_TimeRemaining[64] = "";
+ULONGLONG g_SpoofExpiry = 0;   // 0 = no expiry (until reboot)
+int g_SelectedDuration = DUR_UNTIL_REBOOT;
+CHAR g_TimeRemaining[64] = "";
 
-static BOOL g_HoverChange = FALSE;
-static BOOL g_HoverRevert = FALSE;
-static BOOL g_HoverCleanTraces = FALSE;
+BOOL g_HoverChange = FALSE;
+BOOL g_HoverRevert = FALSE;
+BOOL g_HoverCleanTraces = FALSE;
 
 // Checkbox states for Hex GUI
-static BOOL g_ChkFlushDNS = FALSE;
-static BOOL g_ChkTCPReset = FALSE;
-static BOOL g_ChkWiFiReset = FALSE;
-static BOOL g_ChkTempFiles = TRUE;   // Default ON
-static BOOL g_ChkWinTemp = TRUE;       // Default ON
-static BOOL g_ChkWinLogs = TRUE;       // Default ON
-static BOOL g_ChkChromeCookies = TRUE; // Default ON
-static BOOL g_ChkFirefoxCookies = TRUE; // Default ON
-static BOOL g_ChkAntiCheatTrace = FALSE;
-static BOOL g_ChkFortnite = FALSE;
-static BOOL g_ChkFiveM = FALSE;
-static BOOL g_ChkValorant = FALSE;
-static BOOL g_ChkUnlinkXbox = FALSE;
-static BOOL g_ChkUnlinkDiscord = FALSE;
+BOOL g_ChkFlushDNS = FALSE;
+BOOL g_ChkTCPReset = FALSE;
+BOOL g_ChkWiFiReset = FALSE;
+BOOL g_ChkTempFiles = TRUE;   // Default ON
+BOOL g_ChkWinTemp = TRUE;       // Default ON
+BOOL g_ChkWinLogs = TRUE;       // Default ON
+BOOL g_ChkChromeCookies = TRUE; // Default ON
+BOOL g_ChkFirefoxCookies = TRUE; // Default ON
+BOOL g_ChkAntiCheatTrace = FALSE;
+BOOL g_ChkFortnite = FALSE;
+BOOL g_ChkFiveM = FALSE;
+BOOL g_ChkValorant = FALSE;
+BOOL g_ChkUnlinkXbox = FALSE;
+BOOL g_ChkUnlinkDiscord = FALSE;
 
 // Button hover states
-static BOOL g_HoverStartClean = FALSE;
-static BOOL g_HoverSpoofAll = FALSE;
+BOOL g_HoverStartClean = FALSE;
+BOOL g_HoverSpoofAll = FALSE;
 
 // Checkbox hover tracking
-static int g_HoverCheckbox = -1;
+int g_HoverCheckbox = -1;
 
 // ==================== PROTOTYPES ====================
 
